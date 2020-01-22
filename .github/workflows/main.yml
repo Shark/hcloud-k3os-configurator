@@ -1,0 +1,15 @@
+name: CI
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+        
+      - name: Golang Action
+        uses: cedrickring/golang-action@c0f74f4
+        env:
+          GO111MODULE: "on"
+
