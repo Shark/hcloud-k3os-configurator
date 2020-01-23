@@ -62,6 +62,7 @@ func GetUserData() (string, error) {
 	resp, err := hc.Get(instanceMetadataBaseURL + "/latest/user-data")
 	if err != nil {
 		var neterr net.Error
+		// TODO handle "dial tcp 169.254.169.254:80: connect: host is down" as a RetryableError
 		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
 			return "", &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
 		}
@@ -155,6 +156,49 @@ func GetServer(id string, token string) (*Server, error) {
 		server.Labels[k] = v
 	}
 	return &server, nil
+}
+
+// GetServerWithRole performs a search for a server with the label role and the given value and calls GetServer(id)
+func GetServerWithRole(role string, token string) (*Server, error) {
+	req, err := http.NewRequest("GET", hetznerAPIBaseURL+"/servers", nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+	q := req.URL.Query()
+	q.Add("label_selector", "role=="+role)
+	req.URL.RawQuery = q.Encode()
+	req.Header.Add("Authorization", "Bearer "+token)
+	hc := http.Client{Timeout: 3 * time.Second}
+	resp, err := hc.Do(req)
+	if err != nil {
+		var neterr net.Error
+		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
+			return nil, &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
+		}
+		return nil, fmt.Errorf("error in http request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("unexpected status code %d != 200", resp.StatusCode)
+	}
+	var rawServers struct {
+		Servers []struct {
+			ID uint64 `json:"id"`
+		}
+	}
+	decoder := json.NewDecoder(resp.Body)
+	err = decoder.Decode(&rawServers)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling JSON: %w", err)
+	}
+	if len(rawServers.Servers) != 1 {
+		return nil, fmt.Errorf("could not find a server with role %s", role)
+	}
+	server, err := GetServer(strconv.FormatUint(rawServers.Servers[0].ID, 10), token)
+	if err != nil {
+		return nil, fmt.Errorf("error finding server with role %s (ID %d): %w", role, rawServers.Servers[0].ID, err)
+	}
+	return server, nil
 }
 
 // Network represents a Hetzner Cloud network

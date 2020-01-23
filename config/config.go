@@ -11,6 +11,19 @@ import (
 const tmpl = `---
 hostname: {{ .Node.Name }}
 
+k3os:
+  k3s_args:
+    {{ if eq .Node.Role "server" }}- "server"{{ end }}
+    {{ if eq .Node.Role "agent" }}- "agent"{{ end }}
+    {{ if .Node.JoinURL }}- "--server"
+    - "{{ .Node.JoinURL }}"{{ end }}
+    - "--node-name"
+    - "{{ .Node.ShortName }}"
+    - "--node-ip"
+    - "{{ .Node.PrivateIPv4Address }}"
+    - "--node-external-ip"
+    - "{{ .Node.IPv4Address }}"
+
 write_files:
   - path: /opt/configure_networking.sh
     permissions: '0755'
@@ -114,6 +127,7 @@ write_files:
       # k3s
       -A TCP -s {{ .NetworkIP }}/{{ .PrefixLengthBits }} -j ACCEPT
       -A UDP -s {{ .NetworkIP }}/{{ .PrefixLengthBits }} -j ACCEPT
+      -A TCP -s 10.42.0.0/16 -j ACCEPT
 {{ end }}
 
       COMMIT

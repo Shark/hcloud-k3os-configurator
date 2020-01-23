@@ -6,13 +6,28 @@ import (
 	"strings"
 )
 
+// Role is the node role, i.e. server or agent
+type Role string
+
+const (
+	// RoleServer means this is a server
+	RoleServer = "server"
+
+	// RoleAgent means this is an agent
+	RoleAgent = "agent"
+)
+
 // Config is the static node configuration
 type Config struct {
-	Name        string
-	PublicMAC   string
-	IPv4Address string
-	IPv6Subnet  string
-	IPv6Address string
+	Name               string
+	ShortName          string
+	Role               Role
+	JoinURL            string
+	PublicMAC          string
+	IPv4Address        string
+	IPv6Subnet         string
+	IPv6Address        string
+	PrivateIPv4Address string
 }
 
 // PrivateNetwork is a network that the node is attached to
@@ -33,7 +48,7 @@ type FloatingIP struct {
 }
 
 // GenerateConfig resolves the MAC address for the given public IPv4 and returns a Config struct for the node
-func GenerateConfig(name string, ipv4Address string, ipv6Subnet string) (*Config, error) {
+func GenerateConfig(ipv4Address string, ipv6Subnet string) (*Config, error) {
 	mac, err := findMACForInterfaceWithIPV4Address(ipv4Address)
 	if err != nil {
 		return nil, fmt.Errorf("error finding MAC for interface with IP '%s': %w", ipv4Address, err)
@@ -43,7 +58,6 @@ func GenerateConfig(name string, ipv4Address string, ipv6Subnet string) (*Config
 		return nil, fmt.Errorf("invalid IPv6 subnet: %s, expected CIDR notation", ipv6Subnet)
 	}
 	return &Config{
-		Name:        name,
 		PublicMAC:   mac,
 		IPv4Address: ipv4Address,
 		IPv6Subnet:  ipv6Subnet,
