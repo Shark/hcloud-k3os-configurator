@@ -12,24 +12,67 @@ const tmpl = `---
 hostname: {{ .Node.Name }}
 
 write_files:
-  - path: /var/lib/connman/public.config
+  - path: /opt/configure_networking.sh
+    permissions: '0755'
     content: |
-      [service_eth]
-      Type=ethernet
-      MAC={{ .Node.PublicMAC }}
-      IPv4={{ .Node.IPv4Address }}/32/172.31.1.1
-      IPv6={{ .Node.IPv6Subnet }}/fe80::1
-      Nameservers=1.1.1.1,1.0.0.1
-      TimeServers=ntp1.hetzner.de,ntp2.hetzner.com,ntp3.hetzner.net
-{{ range .PrivateNetworks }}
-  - path: /var/lib/connman/private_{{ .ID }}.config
-    content: |
-      [service_eth]
-      Type=ethernet
-      MAC={{ .MAC }}
-      IPv4={{ .IP }}/{{ .PrefixLength }}
-      IPv6=off
-{{ end }}
+      #!/usr/bin/env bash
+      set -euo pipefail; [[ "${TRACE-}" ]] && set -x
+      DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+      main() {
+        stop_connman
+        configure_dns
+        configure_private_networks || true
+        configure_public_ipv4 || true
+        configure_public_ipv6 || true
+        configure_floating_ips || true
+      }
+
+      stop_connman() {
+        >&2 echo "Stopping connman"
+        /etc/init.d/connman stop
+      }
+
+      configure_dns() {
+        >&2 echo "Configuring DNS"
+        rm -f /etc/resolv.conf
+        cat > /etc/resolv.conf <<EOF
+      nameserver 213.133.98.98
+      nameserver 213.133.99.99
+      nameserver 213.133.100.100
+      EOF
+      }
+
+      configure_private_networks() {
+        >&2 echo "Configuring private networks"
+      {{ range .PrivateNetworks }}  ip link set up dev {{ .DeviceName }}
+        ip addr add {{ .IP }}/32 dev {{ .DeviceName }}
+        ip route add {{ .GatewayIP }} dev {{ .DeviceName }}
+        ip route add {{ .NetworkIP }}/{{ .PrefixLengthBits }} via {{ .GatewayIP }}
+      {{ end }}}
+
+      configure_public_ipv4() {
+        >&2 echo "Configuring public IPv4"
+        ip link set up dev eth0
+        ip addr add {{ .Node.IPv4Address }}/32 dev eth0
+        ip route add 172.31.1.1 dev eth0 src {{ .Node.IPv4Address }}
+        ip route del default || true
+        ip route add default via 172.31.1.1
+      }
+
+      configure_public_ipv6() {
+        >&2 echo "Configuring public IPv6"
+        ip -6 addr add {{ .Node.IPv6Subnet }} dev eth0
+        ip -6 route del default || true
+        ip -6 route add default via fe80::1 dev eth0 src {{ .Node.IPv6Address }}
+      }
+
+      configure_floating_ips() {
+        >&2 echo "Configuring floating IPs"
+      {{ range .FloatingIPs }}  ip addr add {{ .IP }} dev {{ .DeviceName }}
+      {{ end }}}
+
+      main "$@"
   - path: /etc/iptables/rules.v4
     content: |
       *filter
@@ -56,8 +99,8 @@ write_files:
 
 {{ range .PrivateNetworks }}
       # k3s
-      -A TCP -s {{ .NetworkIP }}/{{ .PrefixLength }} -j ACCEPT
-      -A UDP -s {{ .NetworkIP }}/{{ .PrefixLength }} -j ACCEPT
+      -A TCP -s {{ .NetworkIP }}/{{ .PrefixLengthBits }} -j ACCEPT
+      -A UDP -s {{ .NetworkIP }}/{{ .PrefixLengthBits }} -j ACCEPT
 {{ end }}
 
       COMMIT
@@ -105,9 +148,9 @@ boot_cmd:
   - "iptables-restore < /etc/iptables/rules.v4"
   - "ip6tables-restore < /etc/iptables/rules.v6"
 
-{{ if .FloatingIPs }}run_cmd:
-{{ range .FloatingIPs }}  - "ip addr add {{ .IP }} dev eth0"
-{{ end }}{{ end }}`
+run_cmd:
+  - "/opt/configure_networking.sh"
+`
 
 // Generate outputs a k3os YAML config file to the specified io.Writer
 func Generate(out io.Writer, config *node.Config, privateNetworks []*node.PrivateNetwork, floatingIPs []*node.FloatingIP) error {

@@ -125,7 +125,8 @@ func GetServer(id string, token string) (*Server, error) {
 
 // Network represents a Hetzner Cloud network
 type Network struct {
-	IPRange string
+	IPRange   string
+	GatewayIP string
 }
 
 // GetNetwork fetches a network resource from the Hetzner API
@@ -147,6 +148,9 @@ func GetNetwork(id string, token string) (*Network, error) {
 	var rawNetwork struct {
 		Network struct {
 			IPRange string `json:"ip_range"`
+			Subnets []struct {
+				Gateway string `json:"gateway"`
+			} `json:"subnets"`
 		} `json:"network"`
 	}
 	decoder := json.NewDecoder(resp.Body)
@@ -154,7 +158,10 @@ func GetNetwork(id string, token string) (*Network, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling JSON: %w", err)
 	}
-	network := Network{IPRange: rawNetwork.Network.IPRange}
+	if len(rawNetwork.Network.Subnets) != 1 {
+		return nil, fmt.Errorf("invalid number of subnets for network %s: %d != 1", id, len(rawNetwork.Network.Subnets))
+	}
+	network := Network{IPRange: rawNetwork.Network.IPRange, GatewayIP: rawNetwork.Network.Subnets[0].Gateway}
 	return &network, nil
 }
 

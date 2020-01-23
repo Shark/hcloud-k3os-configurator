@@ -73,12 +73,19 @@ func main() {
 			if len(elems) != 2 {
 				log.WithError(err).Fatalf("network with ID %s has a malformed IPRange: %s", n.ID, fullN.IPRange)
 			}
+			deviceName, err := node.FindDeviceNameForMAC(n.MACAddress)
+			if err != nil {
+				log.WithError(err).Warnf("unable to find device for MAC %s, skipping network", n.MACAddress)
+				continue
+			}
 			privateNetworks = append(privateNetworks, &node.PrivateNetwork{
-				ID:           n.ID,
-				MAC:          n.MACAddress,
-				IP:           n.ServerIP,
-				NetworkIP:    elems[0],
-				PrefixLength: elems[1],
+				ID:               n.ID,
+				MAC:              n.MACAddress,
+				IP:               n.ServerIP,
+				NetworkIP:        elems[0],
+				PrefixLengthBits: elems[1],
+				GatewayIP:        fullN.GatewayIP,
+				DeviceName:       deviceName,
 			})
 		} else {
 			log.Fatalf("could not find network with ID %s", n.ID)
@@ -87,7 +94,7 @@ func main() {
 
 	var floatingIPs []*node.FloatingIP
 	for _, fip := range serverFloatingIPs {
-		floatingIPs = append(floatingIPs, &node.FloatingIP{IP: fip.IP})
+		floatingIPs = append(floatingIPs, &node.FloatingIP{IP: fip.IP, DeviceName: "eth0"})
 	}
 
 	f, err := os.Create(*out)
