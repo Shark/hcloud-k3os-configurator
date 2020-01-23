@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,16 +14,40 @@ import (
 const instanceMetadataBaseURL = "http://169.254.169.254"
 const hetznerAPIBaseURL = "https://api.hetzner.cloud/v1"
 
+// RetryableError represents a temporary error which tells the client that the operation may succeed when retried.
+type RetryableError struct {
+	Message string
+	Err     error
+}
+
+// Error is the error message
+func (e *RetryableError) Error() string {
+	return fmt.Sprintf("retryable error: %s: %s", e.Message, e.Err)
+}
+
+// Unwrap makes this error conformant with Go 1.13 errors
+func (e *RetryableError) Unwrap() error {
+	return e.Err
+}
+
 // GetInstanceID retrieves the server's instance ID from the server metadata service
 func GetInstanceID() (string, error) {
-	hc := &http.Client{Timeout: 10 * time.Second}
+	hc := &http.Client{Timeout: 3 * time.Second}
 	resp, err := hc.Get(instanceMetadataBaseURL + "/hetzner/v1/metadata/instance-id")
 	if err != nil {
+		var neterr net.Error
+		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
+			return "", &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
+		}
 		return "", fmt.Errorf("error in http request: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("unexpected status code %d != 200", resp.StatusCode)
+		err = fmt.Errorf("unexpected status code %d != 200", resp.StatusCode)
+		if resp.StatusCode >= 500 && resp.StatusCode < 600 {
+			return "", &RetryableError{Message: "retryable HTTP error", Err: err}
+		}
+		return "", err
 	}
 	instanceIDB, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -32,9 +58,13 @@ func GetInstanceID() (string, error) {
 
 // GetUserData retrieves the user data field from the server metadata service
 func GetUserData() (string, error) {
-	hc := &http.Client{Timeout: 10 * time.Second}
+	hc := &http.Client{Timeout: 3 * time.Second}
 	resp, err := hc.Get(instanceMetadataBaseURL + "/latest/user-data")
 	if err != nil {
+		var neterr net.Error
+		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
+			return "", &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
+		}
 		return "", fmt.Errorf("error in http request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -71,9 +101,13 @@ func GetServer(id string, token string) (*Server, error) {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 	req.Header.Add("Authorization", "Bearer "+token)
-	hc := http.Client{Timeout: 10 * time.Second}
+	hc := http.Client{Timeout: 3 * time.Second}
 	resp, err := hc.Do(req)
 	if err != nil {
+		var neterr net.Error
+		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
+			return nil, &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
+		}
 		return nil, fmt.Errorf("error in http request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -136,9 +170,13 @@ func GetNetwork(id string, token string) (*Network, error) {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 	req.Header.Add("Authorization", "Bearer "+token)
-	hc := http.Client{Timeout: 10 * time.Second}
+	hc := http.Client{Timeout: 3 * time.Second}
 	resp, err := hc.Do(req)
 	if err != nil {
+		var neterr net.Error
+		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
+			return nil, &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
+		}
 		return nil, fmt.Errorf("error in http request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -192,9 +230,13 @@ func GetFloatingIPsForCluster(name string, token string) ([]*FloatingIP, error) 
 	q.Add("label_selector", "cluster=="+name)
 	req.URL.RawQuery = q.Encode()
 	req.Header.Add("Authorization", "Bearer "+token)
-	hc := http.Client{Timeout: 10 * time.Second}
+	hc := http.Client{Timeout: 3 * time.Second}
 	resp, err := hc.Do(req)
 	if err != nil {
+		var neterr net.Error
+		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
+			return nil, &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
+		}
 		return nil, fmt.Errorf("error in http request: %w", err)
 	}
 	defer resp.Body.Close()

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"os"
 	"strings"
+
+	"github.com/avast/retry-go"
 
 	"github.com/shark/hcloud-k3os-configurator/api"
 	"github.com/shark/hcloud-k3os-configurator/config"
@@ -30,13 +33,30 @@ func main() {
 		log.Fatal("HCLOUD_TOKEN must be set")
 	}
 
-	instanceID, err := api.GetInstanceID()
+	var (
+		instanceID string
+		err        error
+	)
+	err = retry.Do(func() error {
+		instanceID, err = api.GetInstanceID()
+		if err != nil && !errors.Is(err, &api.RetryableError{}) {
+			return retry.Unrecoverable(err)
+		}
+		return err
+	})
 	if err != nil {
 		log.WithError(err).Fatal("error getting instance ID")
 	}
 	log.Debugf("Instance ID: %s", instanceID)
 
-	server, err := api.GetServer(instanceID, token)
+	var server *api.Server
+	err = retry.Do(func() error {
+		server, err = api.GetServer(instanceID, token)
+		if err != nil && !errors.Is(err, &api.RetryableError{}) {
+			return retry.Unrecoverable(err)
+		}
+		return err
+	})
 	if err != nil {
 		log.WithError(err).Fatal("error getting server")
 	}
@@ -44,7 +64,14 @@ func main() {
 
 	networks := make(map[string]*api.Network)
 	for _, n := range server.PrivateNetworks {
-		fullN, err := api.GetNetwork(n.ID, token)
+		var fullN *api.Network
+		err = retry.Do(func() error {
+			fullN, err = api.GetNetwork(n.ID, token)
+			if err != nil && !errors.Is(err, &api.RetryableError{}) {
+				return retry.Unrecoverable(err)
+			}
+			return err
+		})
 		if err != nil {
 			log.WithError(err).Fatalf("error getting network with ID %s", n.ID)
 		}
@@ -53,7 +80,13 @@ func main() {
 
 	var serverFloatingIPs []*api.FloatingIP
 	if cluster, ok := server.Labels["cluster"]; ok {
-		serverFloatingIPs, err = api.GetFloatingIPsForCluster(cluster, token)
+		err = retry.Do(func() error {
+			serverFloatingIPs, err = api.GetFloatingIPsForCluster(cluster, token)
+			if err != nil && !errors.Is(err, &api.RetryableError{}) {
+				return retry.Unrecoverable(err)
+			}
+			return err
+		})
 		if err != nil {
 			log.WithError(err).Fatalf("error getting floating IPs for cluster '%s'", cluster)
 		}

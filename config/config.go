@@ -24,53 +24,66 @@ write_files:
         configure_dns
         configure_private_networks || true
         configure_public_ipv4 || true
-        configure_public_ipv6 || true
         configure_floating_ips || true
+        configure_public_ipv6 || true
       }
 
       stop_connman() {
         >&2 echo "Stopping connman"
+        set -x
         /etc/init.d/connman stop
+        [[ "${TRACE-}" ]] || set +x
       }
 
       configure_dns() {
         >&2 echo "Configuring DNS"
+        set -x
         rm -f /etc/resolv.conf
         cat > /etc/resolv.conf <<EOF
       nameserver 213.133.98.98
       nameserver 213.133.99.99
       nameserver 213.133.100.100
       EOF
+        [[ "${TRACE-}" ]] || set +x
       }
 
       configure_private_networks() {
         >&2 echo "Configuring private networks"
+        set -x
       {{ range .PrivateNetworks }}  ip link set up dev {{ .DeviceName }}
         ip addr add {{ .IP }}/32 dev {{ .DeviceName }}
         ip route add {{ .GatewayIP }} dev {{ .DeviceName }}
         ip route add {{ .NetworkIP }}/{{ .PrefixLengthBits }} via {{ .GatewayIP }}
-      {{ end }}}
+      {{ end }}  [[ "${TRACE-}" ]] || set +x
+      }
 
       configure_public_ipv4() {
         >&2 echo "Configuring public IPv4"
+        set -x
         ip link set up dev eth0
         ip addr add {{ .Node.IPv4Address }}/32 dev eth0
         ip route add 172.31.1.1 dev eth0 src {{ .Node.IPv4Address }}
         ip route del default || true
         ip route add default via 172.31.1.1
-      }
-
-      configure_public_ipv6() {
-        >&2 echo "Configuring public IPv6"
-        ip -6 addr add {{ .Node.IPv6Subnet }} dev eth0
-        ip -6 route del default || true
-        ip -6 route add default via fe80::1 dev eth0 src {{ .Node.IPv6Address }}
+        [[ "${TRACE-}" ]] || set +x
       }
 
       configure_floating_ips() {
         >&2 echo "Configuring floating IPs"
+        set -x
       {{ range .FloatingIPs }}  ip addr add {{ .IP }} dev {{ .DeviceName }}
-      {{ end }}}
+      {{ end }}  [[ "${TRACE-}" ]] || set +x
+      }
+
+      configure_public_ipv6() {
+        >&2 echo "Configuring public IPv6"
+        set -x
+        ip -6 addr add {{ .Node.IPv6Subnet }} dev eth0
+        ip -6 route del default || true
+        sleep 10 # not entirely sure why this is needed, presumably route to fe80::1 is only valid after autoconfiguration
+        ip -6 route add default via fe80::1 dev eth0 src {{ .Node.IPv6Address }}
+        [[ "${TRACE-}" ]] || set +x
+      }
 
       main "$@"
   - path: /etc/iptables/rules.v4
