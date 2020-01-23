@@ -4,11 +4,6 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 mkdir -p /var/lib/rancher/k3os/config.d
 
-if [[ -f /run/config/userdata ]]; then
-  # back up userdata to config.d
-  cp /run/config/userdata /var/lib/rancher/k3os/config.d/userdata.yaml
-fi
-
 config_file='/var/lib/rancher/k3os/config.d/configurator.yaml'
 config_hash_before=''
 
