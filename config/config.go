@@ -12,11 +12,12 @@ const tmpl = `---
 hostname: {{ .Node.Name }}
 
 k3os:
+  {{ if .Node.JoinURL }}server_url: "{{ .Node.JoinURL }}"{{ end }}
   k3s_args:
-    {{ if eq .Node.Role "server" }}- "server"{{ end }}
+    {{ if eq .Node.Role "server" }}- "server"
+    - "--advertise-address"
+    - "{{ .Node.PrivateIPv4Address }}"{{ end }}
     {{ if eq .Node.Role "agent" }}- "agent"{{ end }}
-    {{ if .Node.JoinURL }}- "--server"
-    - "{{ .Node.JoinURL }}"{{ end }}
     - "--node-name"
     - "{{ .Node.ShortName }}"
     - "--node-ip"
