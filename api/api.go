@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"gopkg.in/yaml.v2"
 )
 
 const instanceMetadataBaseURL = "http://169.254.169.254"
@@ -77,6 +79,41 @@ func GetUserData() (string, error) {
 		return "", fmt.Errorf("error reading response body: %w", err)
 	}
 	return string(userDataB), nil
+}
+
+// FluxConfig represents the flux config in the user data
+type FluxConfig struct {
+	Enable        bool
+	GitURL        *string
+	GitPrivateKey *string
+}
+
+// GetFluxConfigFromUserData reads a user data string in YAML format and returns the flux config
+func GetFluxConfigFromUserData() (f *FluxConfig, err error) {
+	var userData string
+	if userData, err = GetUserData(); err != nil {
+		return nil, fmt.Errorf("error getting user data: %w", err)
+	}
+	var rawFluxConfig struct {
+		Flux struct {
+			Enable        bool    `yaml:"enable"`
+			GitURL        *string `yaml:"git_url"`
+			GitPrivateKey *string `yaml:"git_private_key"`
+		} `yaml:"flux"`
+	}
+	if err = yaml.Unmarshal([]byte(userData), &rawFluxConfig); err != nil {
+		return nil, fmt.Errorf("error unmarshalling YAML: %w", err)
+	}
+	f = &FluxConfig{Enable: false}
+	if rawFluxConfig.Flux.Enable {
+		f.Enable = true
+		f.GitPrivateKey = rawFluxConfig.Flux.GitPrivateKey
+		if rawFluxConfig.Flux.GitURL == nil {
+			return nil, errors.New("invalid: got nil git_url though flux is enabled")
+		}
+		f.GitURL = rawFluxConfig.Flux.GitURL
+	}
+	return f, nil
 }
 
 // Server represents a Hetzner Cloud Server

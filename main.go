@@ -95,7 +95,20 @@ func main() {
 		log.Infof("server without cluster= label, skipping floating IPs")
 	}
 
-	cfg, err := node.GenerateConfig(server.IPv4Address, server.IPv6Subnet)
+	var fluxConfig *api.FluxConfig
+	err = retry.Do(func() error {
+		fluxConfig, err = api.GetFluxConfigFromUserData()
+		if err != nil && !errors.Is(err, &api.RetryableError{}) {
+			return retry.Unrecoverable(err)
+		}
+		return err
+	})
+	if err != nil {
+		log.WithError(err).Fatalf("error reading flux config from user data, disabling flux")
+		fluxConfig = &api.FluxConfig{Enable: false}
+	}
+
+	cfg, err := node.GenerateConfig(server.IPv4Address, server.IPv6Subnet, fluxConfig)
 	if err != nil {
 		log.WithError(err).Fatal("error creating node config")
 	}

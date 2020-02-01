@@ -1,9 +1,12 @@
 package node
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net"
 	"strings"
+
+	"github.com/shark/hcloud-k3os-configurator/api"
 )
 
 // Role is the node role, i.e. server or agent
@@ -28,6 +31,9 @@ type Config struct {
 	IPv6Subnet         string
 	IPv6Address        string
 	PrivateIPv4Address string
+	FluxEnable         bool
+	FluxGitURL         *string
+	FluxGitPrivateKey  *string
 }
 
 // PrivateNetwork is a network that the node is attached to
@@ -48,7 +54,7 @@ type FloatingIP struct {
 }
 
 // GenerateConfig resolves the MAC address for the given public IPv4 and returns a Config struct for the node
-func GenerateConfig(ipv4Address string, ipv6Subnet string) (*Config, error) {
+func GenerateConfig(ipv4Address string, ipv6Subnet string, fluxConfig *api.FluxConfig) (*Config, error) {
 	mac, err := findMACForInterfaceWithIPV4Address(ipv4Address)
 	if err != nil {
 		return nil, fmt.Errorf("error finding MAC for interface with IP '%s': %w", ipv4Address, err)
@@ -57,11 +63,24 @@ func GenerateConfig(ipv4Address string, ipv6Subnet string) (*Config, error) {
 	if len(ipv6Elems) != 2 {
 		return nil, fmt.Errorf("invalid IPv6 subnet: %s, expected CIDR notation", ipv6Subnet)
 	}
+	var fluxGitPrivateKeyB64 *string
+	if fluxConfig.GitPrivateKey != nil {
+		inStr := *fluxConfig.GitPrivateKey
+		// append a newline to the private key if it does not have one (to make the SSH private key syntactically valid)
+		if inStr[len(inStr)-1] != '\n' {
+			inStr += "\n"
+		}
+		s := base64.StdEncoding.EncodeToString([]byte(inStr))
+		fluxGitPrivateKeyB64 = &s
+	}
 	return &Config{
-		PublicMAC:   mac,
-		IPv4Address: ipv4Address,
-		IPv6Subnet:  ipv6Subnet,
-		IPv6Address: ipv6Elems[0],
+		PublicMAC:         mac,
+		IPv4Address:       ipv4Address,
+		IPv6Subnet:        ipv6Subnet,
+		IPv6Address:       ipv6Elems[0],
+		FluxEnable:        fluxConfig.Enable,
+		FluxGitURL:        fluxConfig.GitURL,
+		FluxGitPrivateKey: fluxGitPrivateKeyB64,
 	}, nil
 }
 

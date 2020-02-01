@@ -26,10 +26,6 @@ k3os:
     - "{{ .Node.IPv4Address }}"
     - "--flannel-iface"
     - "eth1"
-    - "--cluster-cidr"
-    - "172.16.0.0/16"
-    - "--service-cidr"
-    - "172.17.0.0/16"
 
 write_files:
   - path: /opt/configure_networking.sh
@@ -122,6 +118,7 @@ write_files:
       -A INPUT -p icmp -m icmp --icmp-type 8 -m conntrack --ctstate NEW -j ACCEPT
       -A INPUT -p udp -m conntrack --ctstate NEW -j UDP
       -A INPUT -p tcp --tcp-flags FIN,SYN,RST,ACK SYN -m conntrack --ctstate NEW -j TCP
+      -A INPUT -i cni0 -s 10.42.0.0/16 -j ACCEPT
       -A INPUT -m limit --limit 5/min -j LOG --log-prefix "iptables-rejected: "
       -A INPUT -p udp -j REJECT --reject-with icmp-port-unreachable
       -A INPUT -p tcp -j REJECT --reject-with tcp-reset
@@ -165,6 +162,7 @@ write_files:
 
       -A TCP -p tcp --dport 22 -j ACCEPT
       -A TCP -p tcp -m multiport --dports 80,443 -j ACCEPT
+      -A TCP -p tcp --dport 6443 -j ACCEPT
 
       COMMIT
 
@@ -177,12 +175,74 @@ write_files:
 
       COMMIT
 
+{{ if .Node.FluxEnable }}
+  - path: /opt/flux/patch.yaml
+    content: |
+      ---
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: flux
+      spec:
+        template:
+          spec:
+            containers:
+            - name: flux
+              args:
+              - --manifest-generation=true
+              - --memcached-hostname=memcached.flux
+              - --memcached-service=
+              - --ssh-keygen-dir=/var/fluxd/keygen
+              - --git-branch=master
+              - --git-user=hcloud-k3os
+              - --git-email=hcloud-k3os@sh4rk.pw
+              - --git-url={{ .Node.FluxGitURL }}
+
+      ---
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: flux-helm-operator
+      spec:
+        template:
+          spec:
+            volumes:
+            - name: repositories-yaml
+              secret:
+                secretName: helm-repositories
+            - name: repositories-cache
+              emptyDir: {}
+            containers:
+            - name: flux-helm-operator
+              args:
+                - --enabled-helm-versions=v3
+              volumeMounts:
+              - name: repositories-yaml
+                mountPath: /var/fluxd/helm/repository
+              - name: repositories-cache
+                mountPath: /var/fluxd/helm/repository/cache
+
+      {{ if .Node.FluxGitPrivateKey }}
+      ---
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: flux-git-deploy
+        namespace: flux
+      type: Opaque
+      data:
+        identity: {{ .Node.FluxGitPrivateKey }}
+
+      {{ end }}
+{{ end }}
+
 boot_cmd:
   - "iptables-restore < /etc/iptables/rules.v4"
   - "ip6tables-restore < /etc/iptables/rules.v6"
 
 run_cmd:
   - "/opt/configure_networking.sh"
+  - "[[ -f /opt/flux/patch.yaml ]] && kubectl kustomize /opt/flux > /var/lib/rancher/k3s/server/manifests/flux.yaml"
 `
 
 // Generate outputs a k3os YAML config file to the specified io.Writer
