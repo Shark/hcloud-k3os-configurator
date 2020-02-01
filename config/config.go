@@ -24,6 +24,12 @@ k3os:
     - "{{ .Node.PrivateIPv4Address }}"
     - "--node-external-ip"
     - "{{ .Node.IPv4Address }}"
+    - "--flannel-iface"
+    - "eth1"
+    - "--cluster-cidr"
+    - "172.16.0.0/16"
+    - "--service-cidr"
+    - "172.17.0.0/16"
 
 write_files:
   - path: /opt/configure_networking.sh
@@ -128,7 +134,6 @@ write_files:
       # k3s
       -A TCP -s {{ .NetworkIP }}/{{ .PrefixLengthBits }} -j ACCEPT
       -A UDP -s {{ .NetworkIP }}/{{ .PrefixLengthBits }} -j ACCEPT
-      -A TCP -s 10.42.0.0/16 -j ACCEPT
 {{ end }}
 
       COMMIT
