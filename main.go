@@ -197,7 +197,7 @@ func main() {
 	}
 	defer f.Close()
 
-	err = config.Generate(f, cfg, privateNetworks, floatingIPs)
+	err = config.Generate(f, cfg, privateNetworks, floatingIPs, token)
 	if err != nil {
 		log.WithError(err).Fatal("error generating config")
 	}

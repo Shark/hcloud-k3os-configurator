@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"io"
+	"strings"
 	"text/template"
 
 	"github.com/shark/hcloud-k3os-configurator/node"
@@ -126,6 +127,7 @@ write_files:
 
       -A TCP -p tcp --dport 22 -j ACCEPT
       -A TCP -p tcp -m multiport --dports 80,443 -j ACCEPT
+      -A TCP -p tcp --dport 6443 -j ACCEPT
 
 {{ range .PrivateNetworks }}
       # k3s
@@ -174,6 +176,38 @@ write_files:
       -A PREROUTING -j DROP
 
       COMMIT
+
+  - path: /opt/hcloud-csi/secret.yaml
+    content: |
+      ---
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: hcloud-csi
+      stringData:
+        token: {{ .Token }}
+
+  - path: /opt/hcloud-fip/config.yaml
+    content: |
+      ---
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: fip-controller-secrets
+      stringData:
+        HCLOUD_API_TOKEN: {{ .Token }}
+
+      ---
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: fip-controller-config
+      data:
+        config.json: |
+          {
+            "hcloud_floating_ips": [{{ .FloatingIPsJSON }}],
+            "lease_name": "hcloud-fip"
+          }
 
 {{ if .Node.FluxEnable }}
   - path: /opt/flux/patch.yaml
@@ -242,17 +276,25 @@ boot_cmd:
 
 run_cmd:
   - "/opt/configure_networking.sh"
+  - "kubectl kustomize /opt/hcloud-csi > /var/lib/rancher/k3s/server/manifests/hcloud-csi.yaml"
+  - "kubectl kustomize /opt/hcloud-fip > /var/lib/rancher/k3s/server/manifests/hcloud-fip.yaml"
   - "[[ -f /opt/flux/patch.yaml ]] && kubectl kustomize /opt/flux > /var/lib/rancher/k3s/server/manifests/flux.yaml"
 `
 
 // Generate outputs a k3os YAML config file to the specified io.Writer
-func Generate(out io.Writer, config *node.Config, privateNetworks []*node.PrivateNetwork, floatingIPs []*node.FloatingIP) error {
+func Generate(out io.Writer, config *node.Config, privateNetworks []*node.PrivateNetwork, floatingIPs []*node.FloatingIP, token string) error {
+	var quotedFloatingIPs []string
+	for _, fip := range floatingIPs {
+		quotedFloatingIPs = append(quotedFloatingIPs, fmt.Sprintf("\"%s\"", fip.IP))
+	}
 	t := template.Must(template.New("config").Parse(tmpl))
 	err := t.Execute(out, struct {
 		Node            *node.Config
 		PrivateNetworks []*node.PrivateNetwork
 		FloatingIPs     []*node.FloatingIP
-	}{config, privateNetworks, floatingIPs})
+		FloatingIPsJSON string
+		Token           string
+	}{config, privateNetworks, floatingIPs, strings.Join(quotedFloatingIPs, ","), token})
 	if err != nil {
 		return fmt.Errorf("error executing template: %w", err)
 	}
