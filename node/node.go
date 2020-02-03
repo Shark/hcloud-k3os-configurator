@@ -53,11 +53,12 @@ type PrivateNetwork struct {
 // FloatingIP is a floating IP that the server may be attached to
 type FloatingIP struct {
 	IP         string
+	Type       string // ipv4 or ipv6
 	DeviceName string
 }
 
 // GenerateConfig resolves the MAC address for the given public IPv4 and returns a Config struct for the node
-func GenerateConfig(ipv4Address string, ipv6Subnet string, fluxConfig *api.UserConfig) (*Config, error) {
+func GenerateConfig(ipv4Address string, ipv6Subnet string, userConfig *api.UserConfig) (*Config, error) {
 	mac, err := findMACForInterfaceWithIPV4Address(ipv4Address)
 	if err != nil {
 		return nil, fmt.Errorf("error finding MAC for interface with IP '%s': %w", ipv4Address, err)
@@ -67,8 +68,8 @@ func GenerateConfig(ipv4Address string, ipv6Subnet string, fluxConfig *api.UserC
 		return nil, fmt.Errorf("invalid IPv6 subnet: %s, expected CIDR notation", ipv6Subnet)
 	}
 	var fluxGitPrivateKeyB64 *string
-	if fluxConfig.FluxGitPrivateKey != nil {
-		inStr := *fluxConfig.FluxGitPrivateKey
+	if userConfig.FluxGitPrivateKey != nil {
+		inStr := *userConfig.FluxGitPrivateKey
 		// append a newline to the private key if it does not have one (to make the SSH private key syntactically valid)
 		if inStr[len(inStr)-1] != '\n' {
 			inStr += "\n"
@@ -81,12 +82,12 @@ func GenerateConfig(ipv4Address string, ipv6Subnet string, fluxConfig *api.UserC
 		IPv4Address:          ipv4Address,
 		IPv6Subnet:           ipv6Subnet,
 		IPv6Address:          ipv6Elems[0],
-		FluxEnable:           fluxConfig.FluxEnable,
-		FluxGitURL:           fluxConfig.FluxGitURL,
+		FluxEnable:           userConfig.FluxEnable,
+		FluxGitURL:           userConfig.FluxGitURL,
 		FluxGitPrivateKey:    fluxGitPrivateKeyB64,
-		SealedSecretsEnable:  fluxConfig.SealedSecretsEnable,
-		SealedSecretsTLSCert: fluxConfig.SealedSecretsTLSCert,
-		SealedSecretsTLSKey:  fluxConfig.SealedSecretsTLSKey,
+		SealedSecretsEnable:  userConfig.SealedSecretsEnable,
+		SealedSecretsTLSCert: userConfig.SealedSecretsTLSCert,
+		SealedSecretsTLSKey:  userConfig.SealedSecretsTLSKey,
 	}, nil
 }
 

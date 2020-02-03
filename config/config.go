@@ -89,7 +89,7 @@ write_files:
         >&2 echo "Configuring floating IPs"
         set -x
         # TODO fix IPv6 floating IPs (presumably needs separate route table)
-      {{ range .FloatingIPs }}  ip addr add {{ .IP }} dev {{ .DeviceName }}
+      {{ range .FloatingIPs }}  ip addr add {{ .IP }}{{ if eq .Type "ipv6" }}/64{{ end }} dev {{ .DeviceName }}
       {{ end }}  [[ "${TRACE-}" ]] || set +x
       }
 
@@ -287,8 +287,8 @@ write_files:
 {{ end }}
 
 boot_cmd:
-  - "iptables-restore < /etc/iptables/rules.v4"
-  - "ip6tables-restore < /etc/iptables/rules.v6"
+  - "xtables-legacy-multi iptables-restore < /etc/iptables/rules.v4"
+  - "xtables-legacy-multi ip6tables-restore < /etc/iptables/rules.v6"
 
 run_cmd:
   - "/opt/configure_networking.sh"

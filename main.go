@@ -188,8 +188,24 @@ func main() {
 
 	var floatingIPs []*node.FloatingIP
 	for _, fip := range serverFloatingIPs {
-		// TODO remove /64 from IPv6 floating ip
-		floatingIPs = append(floatingIPs, &node.FloatingIP{IP: fip.IP, DeviceName: "eth0"})
+		var (
+			ip     string
+			ipType string
+		)
+		if fip.Type == api.FloatingIPv6 {
+			ip = strings.TrimSuffix(fip.IP, "/64")
+		} else {
+			ip = fip.IP
+		}
+		switch fip.Type {
+		case api.FloatingIPv4:
+			ipType = "ipv4"
+		case api.FloatingIPv6:
+			ipType = "ipv6"
+		default:
+			log.Warnf("unknown type for floating IP: %#v", fip)
+		}
+		floatingIPs = append(floatingIPs, &node.FloatingIP{IP: ip, Type: ipType, DeviceName: "eth0"})
 	}
 
 	f, err := os.Create(*out)
