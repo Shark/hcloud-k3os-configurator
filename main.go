@@ -95,20 +95,20 @@ func main() {
 		log.Infof("server without cluster= label, skipping floating IPs")
 	}
 
-	var fluxConfig *api.FluxConfig
+	var userConfig *api.UserConfig
 	err = retry.Do(func() error {
-		fluxConfig, err = api.GetFluxConfigFromUserData()
+		userConfig, err = api.GetUserConfigFromUserData()
 		if err != nil && !errors.Is(err, &api.RetryableError{}) {
 			return retry.Unrecoverable(err)
 		}
 		return err
 	})
 	if err != nil {
-		log.WithError(err).Fatalf("error reading flux config from user data, disabling flux")
-		fluxConfig = &api.FluxConfig{Enable: false}
+		log.WithError(err).Error("error reading user config from user data, using default")
+		userConfig = &api.UserConfig{FluxEnable: false, SealedSecretsEnable: false}
 	}
 
-	cfg, err := node.GenerateConfig(server.IPv4Address, server.IPv6Subnet, fluxConfig)
+	cfg, err := node.GenerateConfig(server.IPv4Address, server.IPv6Subnet, userConfig)
 	if err != nil {
 		log.WithError(err).Fatal("error creating node config")
 	}
@@ -188,6 +188,7 @@ func main() {
 
 	var floatingIPs []*node.FloatingIP
 	for _, fip := range serverFloatingIPs {
+		// TODO remove /64 from IPv6 floating ip
 		floatingIPs = append(floatingIPs, &node.FloatingIP{IP: fip.IP, DeviceName: "eth0"})
 	}
 

@@ -81,37 +81,57 @@ func GetUserData() (string, error) {
 	return string(userDataB), nil
 }
 
-// FluxConfig represents the flux config in the user data
-type FluxConfig struct {
-	Enable        bool
-	GitURL        *string
-	GitPrivateKey *string
+// UserConfig represents the flux config in the user data
+type UserConfig struct {
+	FluxEnable        bool
+	FluxGitURL        *string
+	FluxGitPrivateKey *string
+
+	SealedSecretsEnable  bool
+	SealedSecretsTLSCert *string
+	SealedSecretsTLSKey  *string
 }
 
-// GetFluxConfigFromUserData reads a user data string in YAML format and returns the flux config
-func GetFluxConfigFromUserData() (f *FluxConfig, err error) {
+// GetUserConfigFromUserData reads a user data string in YAML format and returns the flux config
+func GetUserConfigFromUserData() (f *UserConfig, err error) {
 	var userData string
 	if userData, err = GetUserData(); err != nil {
 		return nil, fmt.Errorf("error getting user data: %w", err)
 	}
-	var rawFluxConfig struct {
+	var rawUserData struct {
 		Flux struct {
 			Enable        bool    `yaml:"enable"`
 			GitURL        *string `yaml:"git_url"`
 			GitPrivateKey *string `yaml:"git_private_key"`
 		} `yaml:"flux"`
+		SealedSecrets struct {
+			Enable  bool    `yaml:"enable"`
+			TLSCert *string `yaml:"tls_cert"`
+			TLSKey  *string `yaml:"tls_key"`
+		} `yaml:"sealed_secrets"`
 	}
-	if err = yaml.Unmarshal([]byte(userData), &rawFluxConfig); err != nil {
+	if err = yaml.Unmarshal([]byte(userData), &rawUserData); err != nil {
 		return nil, fmt.Errorf("error unmarshalling YAML: %w", err)
 	}
-	f = &FluxConfig{Enable: false}
-	if rawFluxConfig.Flux.Enable {
-		f.Enable = true
-		f.GitPrivateKey = rawFluxConfig.Flux.GitPrivateKey
-		if rawFluxConfig.Flux.GitURL == nil {
+	f = &UserConfig{FluxEnable: false, SealedSecretsEnable: false}
+	if rawUserData.Flux.Enable {
+		f.FluxEnable = true
+		f.FluxGitPrivateKey = rawUserData.Flux.GitPrivateKey
+		if rawUserData.Flux.GitURL == nil {
 			return nil, errors.New("invalid: got nil git_url though flux is enabled")
 		}
-		f.GitURL = rawFluxConfig.Flux.GitURL
+		f.FluxGitURL = rawUserData.Flux.GitURL
+	}
+	if rawUserData.SealedSecrets.Enable {
+		f.SealedSecretsEnable = true
+		if rawUserData.SealedSecrets.TLSCert == nil {
+			return nil, errors.New("invalid: got nil tls_cert though Sealed Secrets is enabled")
+		}
+		f.SealedSecretsTLSCert = rawUserData.SealedSecrets.TLSCert
+		if rawUserData.SealedSecrets.TLSKey == nil {
+			return nil, errors.New("invalid: got nil tls_key though Sealed Secrets is enabled")
+		}
+		f.SealedSecretsTLSKey = rawUserData.SealedSecrets.TLSKey
 	}
 	return f, nil
 }

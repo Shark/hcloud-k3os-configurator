@@ -88,6 +88,7 @@ write_files:
       configure_floating_ips() {
         >&2 echo "Configuring floating IPs"
         set -x
+        # TODO fix IPv6 floating IPs (presumably needs separate route table)
       {{ range .FloatingIPs }}  ip addr add {{ .IP }} dev {{ .DeviceName }}
       {{ end }}  [[ "${TRACE-}" ]] || set +x
       }
@@ -270,15 +271,33 @@ write_files:
       {{ end }}
 {{ end }}
 
+{{ if .Node.SealedSecretsEnable }}
+  - path: /opt/sealed-secrets/secret.yaml
+    content: |
+      apiVersion: v1
+      kind: Secret
+      type: kubernetes.io/tls
+      metadata:
+        name: sealed-secrets-key
+      labels:
+        sealedsecrets.bitnami.com/sealed-secrets-key: active
+      data:
+        tls.crt: {{ .Node.SealedSecretsTLSCert }}
+        tls.key: {{ .Node.SealedSecretsTLSKey }}
+{{ end }}
+
 boot_cmd:
   - "iptables-restore < /etc/iptables/rules.v4"
   - "ip6tables-restore < /etc/iptables/rules.v6"
 
 run_cmd:
   - "/opt/configure_networking.sh"
+{{ if eq .Node.Role "server" }}
   - "kubectl kustomize /opt/hcloud-csi > /var/lib/rancher/k3s/server/manifests/hcloud-csi.yaml"
   - "kubectl kustomize /opt/hcloud-fip > /var/lib/rancher/k3s/server/manifests/hcloud-fip.yaml"
-  - "[[ -f /opt/flux/patch.yaml ]] && kubectl kustomize /opt/flux > /var/lib/rancher/k3s/server/manifests/flux.yaml"
+  {{ if .Node.FluxEnable }}- "[[ -f /opt/flux/patch.yaml ]] && kubectl kustomize /opt/flux > /var/lib/rancher/k3s/server/manifests/flux.yaml"{{ end }}
+  {{ if .Node.SealedSecretsEnable }}- "[[ -f /opt/sealed-secrets/secret.yaml ]] && kubectl kustomize /opt/sealed-secrets > /var/lib/rancher/k3s/server/manifests/sealed-secrets.yaml"{{ end }}
+{{ end }}
 `
 
 // Generate outputs a k3os YAML config file to the specified io.Writer
