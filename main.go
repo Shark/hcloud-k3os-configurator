@@ -122,11 +122,6 @@ func main() {
 		log.Debug("SealedSecrets is disabled")
 	}
 
-	log.Info("Resetting network interfaces")
-	if _, err = cmd.Run(&cmd.Command{Name: "sh", Arg: []string{"-c", "for i in $(ls /sys/class/net/); do [ $i != lo ] && /usr/sbin/ip addr flush $i; done"}}, log, *dry); err != nil {
-		log.WithError(err).Error("Error resetting network interfaces")
-	}
-
 	log.Info("Configuring public IPv4")
 	cmds := []*cmd.Command{{Name: "ip", Arg: []string{"-4", "link", "set", "up", "dev", cfg.NodeConfig.PublicNetwork.NetDeviceName}}}
 	for _, ip := range cfg.NodeConfig.PublicNetwork.IPv4Addresses {
@@ -134,7 +129,6 @@ func main() {
 	}
 	cmds = append(
 		cmds,
-		&cmd.Command{Name: "ip", Arg: []string{"-4", "route", "add", cfg.NodeConfig.PublicNetwork.GatewayIPv4.String(), "dev", "eth0", "src", cfg.NodeConfig.PublicNetwork.IPv4Addresses[0].Net.IP.String()}},
 		&cmd.Command{Name: "ip", Arg: []string{"-4", "route", "add", "default", "via", cfg.NodeConfig.PublicNetwork.GatewayIPv4.String()}},
 	)
 	if err = cmd.RunMultiple(log, *dry, cmds); err != nil {

@@ -14,7 +14,7 @@ func GenerateK3OSConfig(path string, cfg *model.HCloudK3OSConfig) (err error) {
 	type k3osCfg struct {
 		SSHAuthorizedKeys []string `yaml:"ssh_authorized_keys"`
 		K3OS              struct {
-			ServerURL string   `yaml:"server_url"`
+			ServerURL *string  `yaml:"server_url,omitempty"`
 			Token     string   `yaml:"token"`
 			K3SArgs   []string `yaml:"k3s_args"`
 		} `yaml:"k3os"`
@@ -25,7 +25,9 @@ func GenerateK3OSConfig(path string, cfg *model.HCloudK3OSConfig) (err error) {
 		buf   []byte
 	)
 	k3cfg.SSHAuthorizedKeys = cfg.NodeConfig.SSHAuthorizedKeys
-	k3cfg.K3OS.ServerURL = cfg.ClusterConfig.K3OSMasterJoinURL
+	if cfg.NodeConfig.Role == model.RoleAgent {
+		k3cfg.K3OS.ServerURL = &cfg.ClusterConfig.K3OSMasterJoinURL
+	}
 	k3cfg.K3OS.Token = cfg.ClusterConfig.K3OSToken
 	k3cfg.K3OS.K3SArgs = []string{}
 	if cfg.NodeConfig.Role == model.RoleMaster {
@@ -33,7 +35,7 @@ func GenerateK3OSConfig(path string, cfg *model.HCloudK3OSConfig) (err error) {
 			k3cfg.K3OS.K3SArgs,
 			"server",
 			"--advertise-address",
-			cfg.NodeConfig.PrivateNetwork.IPv4Addresses[0].Net.String(),
+			cfg.NodeConfig.PrivateNetwork.IPv4Addresses[0].Net.IP.String(),
 		)
 	} else if cfg.NodeConfig.Role == model.RoleAgent {
 		k3cfg.K3OS.K3SArgs = append(
