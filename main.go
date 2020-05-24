@@ -65,22 +65,6 @@ func main() {
 		log.WithError(err).Fatal("Loading config failed")
 	}
 
-	if cfg.NodeConfig.Role == model.RoleMaster && !backup.IsBootstrapped() {
-		if err = backup.Init(cfg.ClusterConfig.BackupConfig, log, false); err != nil {
-			log.WithError(err).Fatal("Unable to initialize backup")
-		}
-
-		if !cfg.ClusterConfig.Bootstrap {
-			if err = backup.Restore(cfg.ClusterConfig.BackupConfig, log, false); err != nil {
-				log.WithError(err).Fatal("Unable to bootstrap node")
-			}
-		} else {
-			if err = backup.MarkBootstrapped(log, false); err != nil {
-				log.WithError(err).Fatal("Unable to mark node as bootstrapped")
-			}
-		}
-	}
-
 	log.Info("Generating and writing configuration files")
 	if err = template.GenerateK3OSConfig("/var/lib/rancher/k3os/config.d/hcloud-k3os.yaml", cfg); err != nil {
 		log.WithError(err).Error("Error generating k3os config")
@@ -210,6 +194,22 @@ func main() {
 	}
 
 	log.Info("Configuration successful!")
+
+	if cfg.NodeConfig.Role == model.RoleMaster && !backup.IsBootstrapped() {
+		if err = backup.Init(cfg.ClusterConfig.BackupConfig, log, false); err != nil {
+			log.WithError(err).Fatal("Unable to initialize backup")
+		}
+
+		if !cfg.ClusterConfig.Bootstrap {
+			if err = backup.Restore(cfg.ClusterConfig.BackupConfig, log, false); err != nil {
+				log.WithError(err).Fatal("Unable to bootstrap node")
+			}
+		} else {
+			if err = backup.MarkBootstrapped(log, false); err != nil {
+				log.WithError(err).Fatal("Unable to mark node as bootstrapped")
+			}
+		}
+	}
 
 	c := cron.New()
 	if _, err = c.AddFunc("@every 8h", func() {
