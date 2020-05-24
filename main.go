@@ -4,220 +4,203 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
-	"strings"
+	"os/signal"
+	"path"
+	"syscall"
+	"time"
 
 	"github.com/avast/retry-go"
-
-	"github.com/shark/hcloud-k3os-configurator/api"
-	"github.com/shark/hcloud-k3os-configurator/config"
-	"github.com/shark/hcloud-k3os-configurator/node"
 	"github.com/sirupsen/logrus"
+
+	"github.com/shark/hcloud-k3os-configurator/cmd"
+	"github.com/shark/hcloud-k3os-configurator/kustomize"
+	"github.com/shark/hcloud-k3os-configurator/model"
+	"github.com/shark/hcloud-k3os-configurator/store"
+	"github.com/shark/hcloud-k3os-configurator/template"
 )
 
 func main() {
+	var (
+		err    error
+		tmpdir string
+		cfg    *model.HCloudK3OSConfig
+	)
 	log := logrus.New()
 
 	debug := flag.Bool("debug", false, "enable debug logging")
-	out := flag.String("out", "/var/lib/rancher/k3os/config.d/configurator.yaml", "config output path")
+	dry := flag.Bool("dry", false, "dry run (do not run commands or write configuration)")
 	flag.Parse()
 
 	if *debug {
 		log.SetLevel(logrus.DebugLevel)
 	}
 
-	var (
-		token string
-		ok    bool
-	)
-	if token, ok = os.LookupEnv("HCLOUD_TOKEN"); !ok {
-		log.Fatal("HCLOUD_TOKEN must be set")
+	if err = os.MkdirAll("/var/lib/hcloud-k3os", 0755); err != nil {
+		log.WithError(err).Fatal("error creating /var/lib/hcloud-k3os")
 	}
 
-	var (
-		instanceID string
-		err        error
-	)
-	err = retry.Do(func() error {
-		instanceID, err = api.GetInstanceID()
-		if err != nil && !errors.Is(err, &api.RetryableError{}) {
-			return retry.Unrecoverable(err)
-		}
-		return err
-	})
-	if err != nil {
-		log.WithError(err).Fatal("error getting instance ID")
-	}
-	log.Debugf("Instance ID: %s", instanceID)
-
-	var server *api.Server
-	err = retry.Do(func() error {
-		server, err = api.GetServer(instanceID, token)
-		if err != nil && !errors.Is(err, &api.RetryableError{}) {
-			return retry.Unrecoverable(err)
-		}
-		return err
-	})
-	if err != nil {
-		log.WithError(err).Fatal("error getting server")
-	}
-	log.Debugf("Server: %#v", server)
-
-	networks := make(map[string]*api.Network)
-	for _, n := range server.PrivateNetworks {
-		var fullN *api.Network
-		err = retry.Do(func() error {
-			fullN, err = api.GetNetwork(n.ID, token)
-			if err != nil && !errors.Is(err, &api.RetryableError{}) {
-				return retry.Unrecoverable(err)
-			}
-			return err
-		})
-		if err != nil {
-			log.WithError(err).Fatalf("error getting network with ID %s", n.ID)
-		}
-		networks[n.ID] = fullN
+	if err = cmd.Run(log, *dry, "rm", "-f", "/var/lib/hcloud-k3os/.running"); err != nil {
+		log.WithError(err).Error("Error deleting .running file")
 	}
 
-	var serverFloatingIPs []*api.FloatingIP
-	if cluster, ok := server.Labels["cluster"]; ok {
-		err = retry.Do(func() error {
-			serverFloatingIPs, err = api.GetFloatingIPsForCluster(cluster, token)
-			if err != nil && !errors.Is(err, &api.RetryableError{}) {
-				return retry.Unrecoverable(err)
-			}
-			return err
-		})
-		if err != nil {
-			log.WithError(err).Fatalf("error getting floating IPs for cluster '%s'", cluster)
-		}
+	if err = os.MkdirAll("/var/lib/rancher/k3os/config.d", 0755); err != nil {
+		log.WithError(err).Fatal("error creating /var/lib/rancher/k3os/config.d")
+	}
+
+	if tmpdir, err = ioutil.TempDir("", "*-hcloud-k3os"); err != nil {
+		log.WithError(err).Fatal("Error creating temp dir")
 	} else {
-		log.Infof("server without cluster= label, skipping floating IPs")
+		defer os.RemoveAll(tmpdir)
+		if err = kustomize.Extract(tmpdir); err != nil {
+			log.WithError(err).Fatal("Error extracting kustomize files")
+		}
 	}
 
-	var userConfig *api.UserConfig
-	err = retry.Do(func() error {
-		userConfig, err = api.GetUserConfigFromUserData()
-		if err != nil && !errors.Is(err, &api.RetryableError{}) {
-			return retry.Unrecoverable(err)
-		}
-		return err
-	})
-	if err != nil {
-		log.WithError(err).Error("error reading user config from user data, using default")
-		userConfig = &api.UserConfig{FluxEnable: false, SealedSecretsEnable: false}
+	if cfg, err = store.Load(log, *dry); err != nil {
+		log.WithError(err).Fatal("Loading config failed")
 	}
 
-	cfg, err := node.GenerateConfig(server.IPv4Address, server.IPv6Subnet, userConfig)
-	if err != nil {
-		log.WithError(err).Fatal("error creating node config")
+	log.Info("Generating and writing configuration files")
+	if err = template.GenerateK3OSConfig("/var/lib/rancher/k3os/config.d/hcloud-k3os.yaml", cfg); err != nil {
+		log.WithError(err).Error("Error generating k3os config")
 	}
-	cfg.Name = server.Name
-	if sName, ok := server.Labels["short_name"]; ok {
-		cfg.ShortName = sName
-	} else {
-		cfg.ShortName = cfg.Name
+
+	if err = template.GenerateDNSConfig("/etc/resolv.conf"); err != nil {
+		log.WithError(err).Error("Error generating DNS config")
 	}
-	if role, ok := server.Labels["role"]; ok {
-		switch role {
-		case "server":
-			cfg.Role = node.RoleServer
-		case "agent":
-			cfg.Role = node.RoleAgent
-		default:
-			log.Warnf("can not process label role=%s, falling back to agent", role)
-			cfg.Role = node.RoleAgent
-		}
-	} else {
-		log.Warnf("server does not have a role label, falling back to agent")
-		cfg.Role = node.RoleAgent
+
+	if err = template.GenerateIptablesConfig("/etc/iptables/rules-save", cfg.NodeConfig.PrivateNetwork); err != nil {
+		log.WithError(err).Error("Error generating iptables config")
 	}
-	if cfg.Role == node.RoleAgent {
-		serverServer, err := api.GetServerWithRole("server", token)
-		if err != nil {
-			log.WithError(err).Warnf("unable to find k3s server for this agent node")
+
+	if err = template.GenerateIP6tablesConfig("/etc/iptables/rules6-save"); err != nil {
+		log.WithError(err).Error("Error generating iptables config")
+	}
+
+	if cfg.NodeConfig.Role == model.RoleMaster && cfg.ClusterConfig.FluxConfig != nil {
+		if err = template.GenerateFluxConfig(path.Join(tmpdir, "flux", "patch.yaml"), cfg.ClusterConfig.FluxConfig); err != nil {
+			log.WithError(err).Error("Error generating Flux config")
 		} else {
-			// TODO add network labelling
-			switch len(serverServer.PrivateNetworks) {
-			case 0:
-				log.Warn("k3s server does not have any private networks, can not use it")
-			case 1:
-				cfg.JoinURL = fmt.Sprintf("https://%s:6443", serverServer.PrivateNetworks[0].ServerIP)
-			default:
-				log.Warn("k3s server has multiple private networks, this is currently not supported; joining in the first one")
-				cfg.JoinURL = fmt.Sprintf("https://%s:6443", serverServer.PrivateNetworks[0].ServerIP)
+			if err = cmd.Run(log, false, "sh", "-c", fmt.Sprintf("kubectl kustomize %s > /var/lib/rancher/k3s/server/manifests/flux.yaml", path.Join(tmpdir, "flux"))); err != nil {
+				log.WithError(err).Error("Error running kustomize for Flux")
 			}
 		}
-	}
-	// TODO add network labelling
-	switch len(server.PrivateNetworks) {
-	case 0:
-		log.Warn("server does not have any private networks, this is discouraged!")
-	case 1:
-		cfg.PrivateIPv4Address = server.PrivateNetworks[0].ServerIP
-	default:
-		log.Warn("server has multiple private networks, this is currently not supported; advertising the first one")
-		cfg.PrivateIPv4Address = server.PrivateNetworks[0].ServerIP
+	} else {
+		log.Debug("Flux is disabled")
 	}
 
-	var privateNetworks []*node.PrivateNetwork
-	for _, n := range server.PrivateNetworks {
-		if fullN, ok := networks[n.ID]; ok {
-			elems := strings.Split(fullN.IPRange, "/")
-			if len(elems) != 2 {
-				log.WithError(err).Fatalf("network with ID %s has a malformed IPRange: %s", n.ID, fullN.IPRange)
-			}
-			deviceName, err := node.FindDeviceNameForMAC(n.MACAddress)
-			if err != nil {
-				log.WithError(err).Warnf("unable to find device for MAC %s, skipping network", n.MACAddress)
-				continue
-			}
-			privateNetworks = append(privateNetworks, &node.PrivateNetwork{
-				ID:               n.ID,
-				MAC:              n.MACAddress,
-				IP:               n.ServerIP,
-				NetworkIP:        elems[0],
-				PrefixLengthBits: elems[1],
-				GatewayIP:        fullN.GatewayIP,
-				DeviceName:       deviceName,
-			})
+	if err = template.GenerateHCloudCSIConfig(path.Join(tmpdir, "hcloud-csi", "secret.yaml"), cfg.ClusterConfig.HCloudToken); err != nil {
+		log.WithError(err).Error("Error generating HCloud CSI config")
+	} else {
+		if err = cmd.Run(log, false, "sh", "-c", fmt.Sprintf("kubectl kustomize %s > /var/lib/rancher/k3s/server/manifests/hcloud-csi.yaml", path.Join(tmpdir, "hcloud-csi"))); err != nil {
+			log.WithError(err).Error("Error running kustomize for HCloud CSI")
+		}
+	}
+
+	if err = template.GenerateHCloudFIPConfig(path.Join(tmpdir, "hcloud-fip", "config.yaml"), cfg.ClusterConfig.HCloudToken, cfg.NodeConfig.FloatingIPs); err != nil {
+		log.WithError(err).Error("Error generating HCloud FIP config")
+	} else {
+		if err = cmd.Run(log, false, "sh", "-c", fmt.Sprintf("kubectl kustomize %s > /var/lib/rancher/k3s/server/manifests/hcloud-fip.yaml", path.Join(tmpdir, "hcloud-fip"))); err != nil {
+			log.WithError(err).Error("Error running kustomize for HCloud FIP")
+		}
+	}
+
+	if cfg.NodeConfig.Role == model.RoleMaster && cfg.ClusterConfig.SealedSecretsConfig != nil {
+		if err = template.GenerateSealedSecretsConfig(path.Join(tmpdir, "sealed-secrets", "secret.yaml"), cfg.ClusterConfig.SealedSecretsConfig); err != nil {
+			log.WithError(err).Error("Error generating SealedSecrets config")
 		} else {
-			log.Fatalf("could not find network with ID %s", n.ID)
+			if err = cmd.Run(log, false, "sh", "-c", fmt.Sprintf("kubectl kustomize %s > /var/lib/rancher/k3s/server/manifests/sealed-secrets.yaml", path.Join(tmpdir, "sealed-secrets"))); err != nil {
+				log.WithError(err).Error("Error running kustomize for SealedSecrets")
+			}
 		}
+	} else {
+		log.Debug("SealedSecrets is disabled")
 	}
 
-	var floatingIPs []*node.FloatingIP
-	for _, fip := range serverFloatingIPs {
-		var (
-			ip     string
-			ipType string
+	log.Info("Resetting network interfaces")
+	if err = cmd.Run(log, *dry, "sh", "-c", "for i in $(ls /sys/class/net/); do [ $i != lo ] && /usr/sbin/ip addr flush $i; done"); err != nil {
+		log.WithError(err).Error("Error resetting network interfaces")
+	}
+
+	log.Info("Configuring public IPv4")
+	cmds := []*cmd.Command{{Name: "ip", Arg: []string{"-4", "link", "set", "up", "dev", cfg.NodeConfig.PublicNetwork.NetDeviceName}}}
+	for _, ip := range cfg.NodeConfig.PublicNetwork.IPv4Addresses {
+		cmds = append(cmds, &cmd.Command{Name: "ip", Arg: []string{"-4", "addr", "add", ip.Net.String(), "dev", "eth0"}})
+	}
+	cmds = append(
+		cmds,
+		&cmd.Command{Name: "ip", Arg: []string{"-4", "route", "add", cfg.NodeConfig.PublicNetwork.GatewayIPv4.String(), "dev", "eth0", "src", cfg.NodeConfig.PublicNetwork.IPv4Addresses[0].Net.IP.String()}},
+		&cmd.Command{Name: "ip", Arg: []string{"-4", "route", "add", "default", "via", cfg.NodeConfig.PublicNetwork.GatewayIPv4.String()}},
+	)
+	if err = cmd.RunMultiple(log, *dry, cmds); err != nil {
+		log.WithError(err).Error("Error configuring public IPv4")
+	}
+
+	log.Info("Configuring public IPv6")
+	cmds = []*cmd.Command{}
+	for _, ip := range cfg.NodeConfig.PublicNetwork.IPv6Addresses {
+		cmds = append(
+			cmds,
+			&cmd.Command{Name: "ip", Arg: []string{"-6", "addr", "add", ip.Net.String(), "dev", "eth0"}},
 		)
-		if fip.Type == api.FloatingIPv6 {
-			ip = strings.TrimSuffix(fip.IP, "/64")
-		} else {
-			ip = fip.IP
+	}
+	if err = cmd.RunMultiple(log, *dry, cmds); err != nil {
+		log.WithError(err).Error("Error configuring public IPv6")
+	}
+
+	log.Info("Configuring IPv6 default route")
+	if err = retry.Do(func() error {
+		var runErr error
+		if runErr = cmd.Run(log, *dry, "ip", "-6", "route", "add", "default", "via", "fe80::1", "src", cfg.NodeConfig.PublicNetwork.IPv6Addresses[0].Net.IP.String(), "dev", "eth0"); err != nil {
+			var cmdErr *cmd.Error
+			if errors.As(runErr, &cmdErr) {
+				// IPv6 not ready yet, retry
+				if cmdErr.ExitCode() == 2 {
+					return runErr
+				}
+			}
+			return retry.Unrecoverable(runErr)
 		}
-		switch fip.Type {
-		case api.FloatingIPv4:
-			ipType = "ipv4"
-		case api.FloatingIPv6:
-			ipType = "ipv6"
-		default:
-			log.Warnf("unknown type for floating IP: %#v", fip)
-		}
-		floatingIPs = append(floatingIPs, &node.FloatingIP{IP: ip, Type: ipType, DeviceName: "eth0"})
+		return nil
+	}, retry.Delay(1*time.Second)); err != nil {
+		log.WithError(err).Error("Error adding IPv6 default route")
 	}
 
-	f, err := os.Create(*out)
-	if err != nil {
-		log.WithError(err).Fatalf("error creating output file at %s", *out)
+	log.Info("Configuring private network")
+	cmds = []*cmd.Command{
+		{Name: "ip", Arg: []string{"-4", "link", "set", "up", "dev", cfg.NodeConfig.PrivateNetwork.NetDeviceName}},
 	}
-	defer f.Close()
-
-	err = config.Generate(f, cfg, privateNetworks, floatingIPs, token)
-	if err != nil {
-		log.WithError(err).Fatal("error generating config")
+	for _, ip := range cfg.NodeConfig.PrivateNetwork.IPv4Addresses {
+		cmds = append(
+			cmds,
+			&cmd.Command{Name: "ip", Arg: []string{"-4", "addr", "add", ip.Net.String(), "dev", cfg.NodeConfig.PrivateNetwork.NetDeviceName}},
+		)
+	}
+	cmds = append(
+		cmds,
+		&cmd.Command{Name: "ip", Arg: []string{"-4", "route", "add", cfg.NodeConfig.PrivateNetwork.GatewayIPv4.String(), "dev", cfg.NodeConfig.PrivateNetwork.NetDeviceName}},
+		&cmd.Command{Name: "ip", Arg: []string{"-4", "route", "add", cfg.NodeConfig.PrivateNetwork.IPv4Addresses[0].Net.String(), "via", cfg.NodeConfig.PrivateNetwork.GatewayIPv4.String()}},
+	)
+	if err = cmd.RunMultiple(log, *dry, cmds); err != nil {
+		log.WithError(err).Error("Error configuring private network")
 	}
 
-	log.Infof("wrote config at %s", *out)
+	log.Info("Configuration successful!")
+
+	if err = cmd.Run(log, false, "touch", "/var/lib/hcloud-k3os/.running"); err != nil {
+		log.WithError(err).Error("Error creating .running file")
+	}
+
+	termChan := make(chan os.Signal, 4)
+	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
+
+	<-termChan
+
+	log.Info("Shutdown signal received")
+
+	if err = cmd.Run(log, false, "rm", "-f", "/var/lib/hcloud-k3os/.running"); err != nil {
+		log.WithError(err).Error("Error deleting .running file")
+	}
 }

@@ -1,0 +1,81 @@
+version: '3'
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.build
+    networks:
+      hcloud_default:
+        ipv4_address: 172.28.0.20
+      user_data:
+    dns: 172.28.0.10
+    volumes:
+      - .:/go/src/app
+    depends_on:
+      - dnsmasq
+      - hcloud
+  dnsmasq:
+    build:
+      context: .
+      dockerfile: Dockerfile.dnsmasq
+    networks:
+      hcloud_default:
+        ipv4_address: 172.28.0.10
+  hcloud:
+    image: mockserver/mockserver
+    command: -serverPort 80,443
+    user: root
+    volumes:
+      - .:/app
+    environment:
+      MOCKSERVER_DYNAMICALLY_CREATE_CERTIFICATE_AUTHORITY_CERTIFICATE: "true"
+      MOCKSERVER_CERTIFICATE_DIRECTORY_TO_SAVE_DYNAMIC_SSL_CERTIFICATE: /app/test/api-mock
+    networks:
+      hcloud_default:
+        ipv4_address: 172.28.0.11
+      user_data:
+        ipv4_address: 169.254.169.254
+  api-mock:
+    build:
+      context: .
+      dockerfile: Dockerfile.api-mock
+    volumes:
+      - ./test/api-mock:/usr/src
+    networks:
+      - hcloud_default
+#  k3s_server:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile.k3s
+#    command: server
+#    tmpfs:
+#      - /run
+#      - /var/run
+#    privileged: true
+#    networks:
+#      - hcloud_default
+#      - user_data
+#    dns: 172.28.0.10
+#    # environment:
+#      # - K3S_TOKEN=${K3S_TOKEN:?err}
+#      # - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+#      # - K3S_KUBECONFIG_MODE=666
+#    volumes:
+#      - k3s_server:/var/lib/rancher/k3s
+#      # This is just so that we get the kubeconfig file out
+#      # - .:/output
+#    ports:
+#      - 6443:6443
+volumes:
+  k3s_server:
+networks:
+  hcloud_default:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/24
+  user_data:
+    ipam:
+      driver: default
+      config:
+        - subnet: 169.254.169.0/24

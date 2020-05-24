@@ -1,0 +1,5 @@
+FROM alpine:3.11
+
+RUN apk add --no-cache dnsmasq
+# --dhcp-option=3 disables default gateway
+CMD ["/usr/sbin/dnsmasq", "--no-daemon", "--host-record=api.hetzner.cloud,172.28.0.11"]

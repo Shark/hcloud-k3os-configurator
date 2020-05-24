@@ -1,0 +1,187 @@
+{"servers": [
+{
+    "id": 4406144,
+    "name": "k3os-server",
+    "status": "running",
+    "created": "2020-02-03T13:45:15+00:00",
+    "public_net": {
+      "ipv4": {
+        "ip": "88.99.36.44",
+        "blocked": false,
+        "dns_ptr": "static.44.36.99.88.clients.your-server.de"
+      },
+      "ipv6": {
+        "ip": "2a01:4f8:c17:11fc::/64",
+        "blocked": false,
+        "dns_ptr": []
+      },
+      "floating_ips": []
+    },
+    "private_net": [
+      {
+        "network": 50343,
+        "ip": "10.0.0.2",
+        "alias_ips": [],
+        "mac_address": "86:00:00:3f:ac:d9"
+      }
+    ],
+    "server_type": {
+      "id": 2,
+      "name": "cx11-ceph",
+      "description": "CX11 Ceph Disk",
+      "cores": 1,
+      "memory": 2.0,
+      "disk": 20,
+      "deprecated": null,
+      "prices": [
+        {
+          "location": "fsn1",
+          "price_hourly": {
+            "net": "0.0040000000",
+            "gross": "0.0047600000000000"
+          },
+          "price_monthly": {
+            "net": "2.4900000000",
+            "gross": "2.9631000000000000"
+          }
+        },
+        {
+          "location": "nbg1",
+          "price_hourly": {
+            "net": "0.0040000000",
+            "gross": "0.0047600000000000"
+          },
+          "price_monthly": {
+            "net": "2.4900000000",
+            "gross": "2.9631000000000000"
+          }
+        },
+        {
+          "location": "hel1",
+          "price_hourly": {
+            "net": "0.0040000000",
+            "gross": "0.0047600000000000"
+          },
+          "price_monthly": {
+            "net": "2.4900000000",
+            "gross": "2.9631000000000000"
+          }
+        }
+      ],
+      "storage_type": "network",
+      "cpu_type": "shared"
+    },
+    "datacenter": {
+      "id": 4,
+      "name": "fsn1-dc14",
+      "description": "Falkenstein 1 DC14",
+      "location": {
+        "id": 1,
+        "name": "fsn1",
+        "description": "Falkenstein DC Park 1",
+        "country": "DE",
+        "city": "Falkenstein",
+        "latitude": 50.47612,
+        "longitude": 12.370071,
+        "network_zone": "eu-central"
+      },
+      "server_types": {
+        "supported": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "available": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "available_for_migration": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    },
+    "image": {
+      "id": 12313998,
+      "type": "snapshot",
+      "status": "available",
+      "name": null,
+      "description": "k3os-0.9.0-rc5-1",
+      "image_size": 0.926357124023438,
+      "disk_size": 20,
+      "created": "2020-02-03T13:41:06+00:00",
+      "created_from": {
+        "id": 4405985,
+        "name": "k3os-build-0.9.0-rc5-1"
+      },
+      "bound_to": null,
+      "os_flavor": "ubuntu",
+      "os_version": null,
+      "rapid_deploy": false,
+      "protection": {
+        "delete": false
+      },
+      "deprecated": null,
+      "labels": {
+        "name": "k3os",
+        "release": "1",
+        "version": "0.9.0-rc5"
+      }
+    },
+    "iso": null,
+    "rescue_enabled": false,
+    "locked": false,
+    "backup_window": null,
+    "outgoing_traffic": 2284280000,
+    "ingoing_traffic": 8724286000,
+    "included_traffic": 21990232555520,
+    "protection": {
+      "delete": false,
+      "rebuild": false
+    },
+    "labels": {
+      "role": "server",
+      "cluster": "test",
+      "short_name": "server"
+    },
+    "volumes": []
+  }
+]}

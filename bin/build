@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -eou pipefail; [[ ${TRACE:-} ]] && set -x
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+main() {
+  cd "$DIR/.."
+  docker-compose build app
+
+  local cid
+  cid="$(docker create hcloud-k3os-configurator_app:latest)"
+  trap "docker rm -f -v '$cid'" EXIT
+  docker cp "$cid":/go/bin/hcloud-k3os-configurator dist/
+}
+
+main "$@"

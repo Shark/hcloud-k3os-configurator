@@ -11,35 +11,34 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v2"
+
+	"github.com/shark/hcloud-k3os-configurator/errorx"
 )
 
 const instanceMetadataBaseURL = "http://169.254.169.254"
 const hetznerAPIBaseURL = "https://api.hetzner.cloud/v1"
 
-// RetryableError represents a temporary error which tells the client that the operation may succeed when retried.
-type RetryableError struct {
-	Message string
-	Err     error
+// Client is the hcloud API client
+type Client struct {
+	hCloudToken string
+	httpClient  *http.Client
 }
 
-// Error is the error message
-func (e *RetryableError) Error() string {
-	return fmt.Sprintf("retryable error: %s: %s", e.Message, e.Err)
-}
-
-// Unwrap makes this error conformant with Go 1.13 errors
-func (e *RetryableError) Unwrap() error {
-	return e.Err
+// NewClient returns a new client with the given hcloud token
+func NewClient(hCloudToken string) *Client {
+	return &Client{
+		hCloudToken: hCloudToken,
+		httpClient:  &http.Client{Timeout: 3 * time.Second},
+	}
 }
 
 // GetInstanceID retrieves the server's instance ID from the server metadata service
-func GetInstanceID() (string, error) {
-	hc := &http.Client{Timeout: 3 * time.Second}
-	resp, err := hc.Get(instanceMetadataBaseURL + "/hetzner/v1/metadata/instance-id")
+func (c *Client) GetInstanceID() (string, error) {
+	resp, err := c.httpClient.Get(instanceMetadataBaseURL + "/hetzner/v1/metadata/instance-id")
 	if err != nil {
 		var neterr net.Error
 		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
-			return "", &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
+			return "", &errorx.RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
 		}
 		return "", fmt.Errorf("error in http request: %w", err)
 	}
@@ -47,7 +46,7 @@ func GetInstanceID() (string, error) {
 	if resp.StatusCode != 200 {
 		err = fmt.Errorf("unexpected status code %d != 200", resp.StatusCode)
 		if resp.StatusCode >= 500 && resp.StatusCode < 600 {
-			return "", &RetryableError{Message: "retryable HTTP error", Err: err}
+			return "", &errorx.RetryableError{Message: "retryable HTTP error", Err: err}
 		}
 		return "", err
 	}
@@ -59,14 +58,13 @@ func GetInstanceID() (string, error) {
 }
 
 // GetUserData retrieves the user data field from the server metadata service
-func GetUserData() (string, error) {
-	hc := &http.Client{Timeout: 3 * time.Second}
-	resp, err := hc.Get(instanceMetadataBaseURL + "/latest/user-data")
+func (c *Client) GetUserData() (string, error) {
+	resp, err := c.httpClient.Get(instanceMetadataBaseURL + "/latest/user-data")
 	if err != nil {
 		var neterr net.Error
 		// TODO handle "dial tcp 169.254.169.254:80: connect: host is down" as a RetryableError
 		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
-			return "", &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
+			return "", &errorx.RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
 		}
 		return "", fmt.Errorf("error in http request: %w", err)
 	}
@@ -83,57 +81,43 @@ func GetUserData() (string, error) {
 
 // UserConfig represents the flux config in the user data
 type UserConfig struct {
-	FluxEnable        bool
-	FluxGitURL        *string
-	FluxGitPrivateKey *string
+	HCloudToken       string   `yaml:"hcloud_token"`
+	K3OSToken         string   `yaml:"k3os_token"`
+	SSHAuthorizedKeys []string `yaml:"ssh_authorized_keys"`
 
-	SealedSecretsEnable  bool
-	SealedSecretsTLSCert *string
-	SealedSecretsTLSKey  *string
+	FluxGitURL        *string `yaml:"flux_git_url"`
+	FluxGitPrivateKey *string `yaml:"flux_git_private_key"`
+
+	SealedSecretsTLSCert *string `yaml:"sealed_secrets_tls_cert"`
+	SealedSecretsTLSKey  *string `yaml:"sealed_secrets_tls_key"`
 }
 
 // GetUserConfigFromUserData reads a user data string in YAML format and returns the flux config
-func GetUserConfigFromUserData() (f *UserConfig, err error) {
-	var userData string
-	if userData, err = GetUserData(); err != nil {
+func (c *Client) GetUserConfigFromUserData() (*UserConfig, error) {
+	var (
+		userDataStr string
+		err         error
+	)
+	if userDataStr, err = c.GetUserData(); err != nil {
 		return nil, fmt.Errorf("error getting user data: %w", err)
 	}
-	var rawUserData struct {
-		Flux struct {
-			Enable        bool    `yaml:"enable"`
-			GitURL        *string `yaml:"git_url"`
-			GitPrivateKey *string `yaml:"git_private_key"`
-		} `yaml:"flux"`
-		SealedSecrets struct {
-			Enable  bool    `yaml:"enable"`
-			TLSCert *string `yaml:"tls_cert"`
-			TLSKey  *string `yaml:"tls_key"`
-		} `yaml:"sealed_secrets"`
-	}
-	if err = yaml.Unmarshal([]byte(userData), &rawUserData); err != nil {
+	var userData UserConfig
+	if err = yaml.Unmarshal([]byte(userDataStr), &userData); err != nil {
 		return nil, fmt.Errorf("error unmarshalling YAML: %w", err)
 	}
-	f = &UserConfig{FluxEnable: false, SealedSecretsEnable: false}
-	if rawUserData.Flux.Enable {
-		f.FluxEnable = true
-		f.FluxGitPrivateKey = rawUserData.Flux.GitPrivateKey
-		if rawUserData.Flux.GitURL == nil {
-			return nil, errors.New("invalid: got nil git_url though flux is enabled")
-		}
-		f.FluxGitURL = rawUserData.Flux.GitURL
+	if len(userData.HCloudToken) == 0 {
+		return nil, fmt.Errorf("invalid: got zero-length HCloud token")
 	}
-	if rawUserData.SealedSecrets.Enable {
-		f.SealedSecretsEnable = true
-		if rawUserData.SealedSecrets.TLSCert == nil {
-			return nil, errors.New("invalid: got nil tls_cert though Sealed Secrets is enabled")
-		}
-		f.SealedSecretsTLSCert = rawUserData.SealedSecrets.TLSCert
-		if rawUserData.SealedSecrets.TLSKey == nil {
-			return nil, errors.New("invalid: got nil tls_key though Sealed Secrets is enabled")
-		}
-		f.SealedSecretsTLSKey = rawUserData.SealedSecrets.TLSKey
+	if len(userData.K3OSToken) == 0 {
+		return nil, fmt.Errorf("invalid: got zero-length K3OS token")
 	}
-	return f, nil
+	if (userData.FluxGitURL != nil && userData.FluxGitPrivateKey == nil) || (userData.FluxGitPrivateKey != nil && userData.FluxGitURL == nil) {
+		return nil, fmt.Errorf("invalid: flux_git_url and flux_git_private_key must be both set or both be null")
+	}
+	if (userData.SealedSecretsTLSCert != nil && userData.SealedSecretsTLSKey == nil) || (userData.SealedSecretsTLSKey != nil && userData.SealedSecretsTLSCert == nil) {
+		return nil, fmt.Errorf("invalid: sealed_secrets_tls_cert and sealed_secrets_tls_key must be both set or both be null")
+	}
+	return &userData, nil
 }
 
 // Server represents a Hetzner Cloud Server
@@ -145,6 +129,33 @@ type Server struct {
 	Labels          map[string]string
 }
 
+// IPv4Net returns the IPv4 network of this server
+func (s *Server) IPv4Net() (*net.IPNet, error) {
+	var ip net.IP
+	if ip = net.ParseIP(s.IPv4Address); ip == nil {
+		return nil, fmt.Errorf("error parsing IPv4Address '%s'", s.IPv4Address)
+	}
+	return &net.IPNet{
+		IP:   ip,
+		Mask: net.CIDRMask(32, 32),
+	}, nil
+}
+
+// IPv6Net returns the IPv6 network of this server
+func (s *Server) IPv6Net() (*net.IPNet, error) {
+	var (
+		ipnet *net.IPNet
+		err   error
+	)
+	if _, ipnet, err = net.ParseCIDR(s.IPv6Subnet); err != nil {
+		return nil, fmt.Errorf("error parsing IPv6Subnet '%s'", s.IPv6Subnet)
+	}
+
+	ipnet.IP[len(ipnet.IP)-1] = 1
+
+	return ipnet, nil
+}
+
 // NetworkAssociation represents an association of a server to a network
 type NetworkAssociation struct {
 	ID         string
@@ -152,19 +163,30 @@ type NetworkAssociation struct {
 	MACAddress string
 }
 
+// IPv4Net returns the IPv4 network of this network association
+func (n *NetworkAssociation) IPv4Net() (*net.IPNet, error) {
+	var ip net.IP
+	if ip = net.ParseIP(n.ServerIP); ip == nil {
+		return nil, fmt.Errorf("error parsing ServerIP '%s'", ip)
+	}
+	return &net.IPNet{
+		IP:   ip,
+		Mask: net.CIDRMask(24, 32),
+	}, nil
+}
+
 // GetServer fetches a server resource from the Hetzner API
-func GetServer(id string, token string) (*Server, error) {
+func (c *Client) GetServer(id string) (*Server, error) {
 	req, err := http.NewRequest("GET", hetznerAPIBaseURL+"/servers/"+id, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
-	req.Header.Add("Authorization", "Bearer "+token)
-	hc := http.Client{Timeout: 3 * time.Second}
-	resp, err := hc.Do(req)
+	req.Header.Add("Authorization", "Bearer "+c.hCloudToken)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		var neterr net.Error
 		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
-			return nil, &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
+			return nil, &errorx.RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
 		}
 		return nil, fmt.Errorf("error in http request: %w", err)
 	}
@@ -215,22 +237,21 @@ func GetServer(id string, token string) (*Server, error) {
 	return &server, nil
 }
 
-// GetServerWithRole performs a search for a server with the label role and the given value and calls GetServer(id)
-func GetServerWithRole(role string, token string) (*Server, error) {
+// GetServerWithRoleInCluster performs a search for a server with the label role and the given value and calls GetServer(id)
+func (c *Client) GetServerWithRoleInCluster(role string, cluster string) (*Server, error) {
 	req, err := http.NewRequest("GET", hetznerAPIBaseURL+"/servers", nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 	q := req.URL.Query()
-	q.Add("label_selector", "role=="+role)
+	q.Add("label_selector", fmt.Sprintf("cluster==%s,role==%s", cluster, role))
 	req.URL.RawQuery = q.Encode()
-	req.Header.Add("Authorization", "Bearer "+token)
-	hc := http.Client{Timeout: 3 * time.Second}
-	resp, err := hc.Do(req)
+	req.Header.Add("Authorization", "Bearer "+c.hCloudToken)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		var neterr net.Error
 		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
-			return nil, &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
+			return nil, &errorx.RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
 		}
 		return nil, fmt.Errorf("error in http request: %w", err)
 	}
@@ -251,7 +272,7 @@ func GetServerWithRole(role string, token string) (*Server, error) {
 	if len(rawServers.Servers) != 1 {
 		return nil, fmt.Errorf("could not find a server with role %s", role)
 	}
-	server, err := GetServer(strconv.FormatUint(rawServers.Servers[0].ID, 10), token)
+	server, err := c.GetServer(strconv.FormatUint(rawServers.Servers[0].ID, 10))
 	if err != nil {
 		return nil, fmt.Errorf("error finding server with role %s (ID %d): %w", role, rawServers.Servers[0].ID, err)
 	}
@@ -265,18 +286,17 @@ type Network struct {
 }
 
 // GetNetwork fetches a network resource from the Hetzner API
-func GetNetwork(id string, token string) (*Network, error) {
+func (c *Client) GetNetwork(id string) (*Network, error) {
 	req, err := http.NewRequest("GET", hetznerAPIBaseURL+"/networks/"+id, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
-	req.Header.Add("Authorization", "Bearer "+token)
-	hc := http.Client{Timeout: 3 * time.Second}
-	resp, err := hc.Do(req)
+	req.Header.Add("Authorization", "Bearer "+c.hCloudToken)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		var neterr net.Error
 		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
-			return nil, &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
+			return nil, &errorx.RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
 		}
 		return nil, fmt.Errorf("error in http request: %w", err)
 	}
@@ -321,8 +341,35 @@ type FloatingIP struct {
 	IP   string // in case of IPv4, this is just the IP; with IPv6, this is in CIDR notation
 }
 
+// IPv4Net returns the IPv4 network of this floating IP
+func (f *FloatingIP) IPv4Net() (*net.IPNet, error) {
+	var ip net.IP
+	if ip = net.ParseIP(f.IP); ip == nil {
+		return nil, fmt.Errorf("error parsing IPv4Address '%s'", f.IP)
+	}
+	return &net.IPNet{
+		IP:   ip,
+		Mask: net.CIDRMask(32, 32),
+	}, nil
+}
+
+// IPv6Net returns the IPv6 network of this floating IP
+func (f *FloatingIP) IPv6Net() (*net.IPNet, error) {
+	var (
+		ipnet *net.IPNet
+		err   error
+	)
+	if _, ipnet, err = net.ParseCIDR(f.IP); err != nil {
+		return nil, fmt.Errorf("error parsing IPv6Subnet '%s'", f.IP)
+	}
+
+	ipnet.IP[len(ipnet.IP)-1] = 1
+
+	return ipnet, nil
+}
+
 // GetFloatingIPsForCluster finds floating IPs that have a label with key 'cluster' and the given name
-func GetFloatingIPsForCluster(name string, token string) ([]*FloatingIP, error) {
+func (c *Client) GetFloatingIPsForCluster(name string) ([]*FloatingIP, error) {
 	req, err := http.NewRequest("GET", hetznerAPIBaseURL+"/floating_ips", nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
@@ -330,13 +377,12 @@ func GetFloatingIPsForCluster(name string, token string) ([]*FloatingIP, error) 
 	q := req.URL.Query()
 	q.Add("label_selector", "cluster=="+name)
 	req.URL.RawQuery = q.Encode()
-	req.Header.Add("Authorization", "Bearer "+token)
-	hc := http.Client{Timeout: 3 * time.Second}
-	resp, err := hc.Do(req)
+	req.Header.Add("Authorization", "Bearer "+c.hCloudToken)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		var neterr net.Error
 		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
-			return nil, &RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
+			return nil, &errorx.RetryableError{Message: "timeout or temporary error in HTTP request", Err: neterr}
 		}
 		return nil, fmt.Errorf("error in http request: %w", err)
 	}

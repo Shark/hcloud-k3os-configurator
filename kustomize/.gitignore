@@ -1,0 +1,6 @@
+static/flux/flux-deploy
+static/flux/helm-operator-deploy
+static/hcloud-csi/hcloud-csi.yaml
+static/hcloud-fip/rbac.yaml
+static/hcloud-fip/daemonset.yaml
+static/sealed-secrets/controller.yaml

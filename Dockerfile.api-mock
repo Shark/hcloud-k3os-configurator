@@ -1,0 +1,9 @@
+FROM node:14-alpine
+
+RUN mkdir /usr/src
+COPY test/api-mock/package.json test/api-mock/package-lock.json /usr/src/
+WORKDIR /usr/src
+RUN npm install
+
+COPY test/api-mock /usr/src
+ENTRYPOINT ["/usr/local/bin/node", "init.js"]

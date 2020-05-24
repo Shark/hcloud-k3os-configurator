@@ -1,0 +1,9 @@
+---
+hcloud_token: hcloudtoken
+k3os_token: k3ostoken
+ssh_authorized_keys:
+  - github:Shark
+flux_git_url: git@github.com:Shark/k3s-playground
+flux_git_private_key: ABC
+sealed_secrets_tls_cert: DEF
+sealed_secrets_tls_key: GHJ

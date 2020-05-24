@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eou pipefail; [[ ${TRACE:-} ]] && set -x
+
+main() {
+  hcloud-k3os-configurator -dry
+}
+
+main "$@"

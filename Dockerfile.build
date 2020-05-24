@@ -1,0 +1,22 @@
+FROM golang:1.14-alpine
+
+COPY test/api-mock/CertificateAuthorityCertificate.pem /usr/local/share/ca-certificates/api-mock.crt
+RUN update-ca-certificates \
+ && mkdir -p /etc/iptables /var/lib/rancher/k3s/server/manifests
+
+RUN apk add --no-cache curl \
+ && curl -L -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/v1.18.0/bin/linux/amd64/kubectl \
+ && chmod +x /usr/bin/kubectl \
+ && apk del --no-cache curl
+
+WORKDIR /go/src/app
+
+COPY go.mod go.sum ./
+RUN go get github.com/markbates/pkger/cmd/pkger \
+ && go mod download
+
+COPY . .
+RUN pkger \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-d -s -w" -tags netgo -installsuffix netgo -o /go/bin/hcloud-k3os-configurator .
+
+CMD ["/go/bin/hcloud-k3os-configurator", "-dry", "-debug"]

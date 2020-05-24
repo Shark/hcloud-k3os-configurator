@@ -1,0 +1,6 @@
+namespace: hcloud-fip
+resources:
+- namespace.yaml
+- config.yaml
+- rbac.yaml
+- daemonset.yaml

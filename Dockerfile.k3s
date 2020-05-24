@@ -1,0 +1,8 @@
+FROM rancher/k3s:v1.17.4-k3s1
+
+RUN mkdir -p /etc/iptables /var/lib/hcloud-k3os /var/lib/rancher/k3s/server/manifests
+COPY test/api-mock/CertificateAuthorityCertificate.pem /etc/ssl/certs/api-mock.crt
+RUN cat /etc/ssl/certs/api-mock.crt >> /etc/ssl/certs/ca-certificates.crt
+COPY dist/hcloud-k3os-configurator /usr/local/bin/
+COPY bin/run_k3s_server /docker-entrypoint.sh
+ENTRYPOINT ["/docker-entrypoint.sh"]

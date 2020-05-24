@@ -6,10 +6,62 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # Check out repository
       - uses: actions/checkout@v1
-        
-      - name: Golang Action
-        uses: cedrickring/golang-action@c0f74f4
-        env:
-          GO111MODULE: "on"
 
+      # Set up Go
+      - uses: actions/setup-go@v1.0.0
+        with:
+          version: "1.14"
+      - name: Set GOPATH
+        run: echo "::set-env name=GOPATH::$(go env GOPATH)"
+      - name: Cache GOPATH
+        uses: actions/cache@v1
+        with:
+          path: ${{ env.GOPATH }}
+          key: gopath
+
+      # Set up pre-commit
+      - uses: actions/setup-python@v1
+      - name: Set PY
+        run: echo "::set-env name=PY::$(python --version --version | sha256sum | cut -d' ' -f1)"
+      - name: Set PRE_COMMIT_VERSION
+        run: echo "::set-env name=PRE_COMMIT_VERSION::2.0.1"
+      - name: Cache Python packages
+        uses: actions/cache@v1
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ env.PRE_COMMIT_VERSION }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Install pre-commit
+        run: pip install pre-commit==${{ env.PRE_COMMIT_VERSION }}
+      - name: Cache pre-commit cache
+        uses: actions/cache@v1
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit|${{ env.PY }}|${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # Set up golint
+      - name: Set up golint
+        run: go get -u golang.org/x/lint/golint
+
+      # Set up golangci-lint
+      - name: Set GOLANGCI_LINT_VERSION
+        run: echo "::set-env name=GOLANGCI_LINT_VERSION::v1.23.8"
+      - name: Set up golangci-lint
+        run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/4f3e410581dd7c097c38eefd8f84206d19c843c1/install.sh | sh -s -- -b ${{ env.GOPATH }}/bin ${{ env.GOLANGCI_LINT_VERSION }}
+
+      # Run pre-commit
+      - name: Run pre-commit
+        run: |
+          export PATH="${{ env.GOPATH }}/bin:$PATH"
+          pre-commit run --all-files
+
+      - name: Run go test
+        run: |
+          go test -v -cover ./...
+
+      - name: Run integration test
+        run: |
+          test/integration.sh

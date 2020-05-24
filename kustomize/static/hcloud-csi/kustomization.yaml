@@ -1,0 +1,5 @@
+namespace: hcloud-csi
+resources:
+- namespace.yaml
+- secret.yaml
+- hcloud-csi.yaml

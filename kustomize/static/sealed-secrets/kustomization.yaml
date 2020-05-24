@@ -1,0 +1,7 @@
+namespace: sealed-secrets
+resources:
+- namespace.yaml
+- controller.yaml
+- secret.yaml
+patchesStrategicMerge:
+- patch.yaml

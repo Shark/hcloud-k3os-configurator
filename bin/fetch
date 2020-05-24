@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -eou pipefail; [[ ${TRACE:-} ]] && set -x
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+main() {
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  trap "rm -rf $tmpdir" EXIT
+
+  cd "$tmpdir"
+
+  [[ -d "$DIR"/../kustomize/flux/flux-deploy ]] && rm -r "$DIR"/../kustomize/flux/flux-deploy
+  curl -sSL https://github.com/fluxcd/flux/archive/1.17.1.tar.gz | tar xz
+  mv flux-1.17.1/deploy "$DIR"/../kustomize/flux/flux-deploy
+
+  [[ -d "$DIR"/../kustomize/flux/helm-operator-deploy ]] && rm -r "$DIR"/../kustomize/flux/helm-operator-deploy
+  curl -sSL https://github.com/fluxcd/helm-operator/archive/v1.0.0-rc8.tar.gz | tar xz
+  mv helm-operator-1.0.0-rc8/deploy "$DIR"/../kustomize/flux/helm-operator-deploy
+
+  curl -sSL -o "$DIR"/../kustomize/hcloud-csi/hcloud-csi.yaml https://raw.githubusercontent.com/hetznercloud/csi-driver/v1.2.2/deploy/kubernetes/hcloud-csi.yml
+  curl -sSL -o "$DIR"/../kustomize/hcloud-fip/rbac.yaml https://raw.githubusercontent.com/cbeneke/hcloud-fip-controller/v0.3.1/deploy/rbac.yaml
+  curl -sSL -o "$DIR"/../kustomize/hcloud-fip/daemonset.yaml https://raw.githubusercontent.com/cbeneke/hcloud-fip-controller/v0.3.1/deploy/daemonset.yaml
+  curl -sSL -o "$DIR"/../kustomize/sealed-secrets/controller.yaml https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.9.7/controller.yaml
+}
+
+main "$@"
