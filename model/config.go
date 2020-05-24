@@ -59,12 +59,22 @@ func (ip *IPAddress) CanonicalNet() (*net.IPNet, error) {
 
 // ClusterConfig is the config for the whole cluster
 type ClusterConfig struct {
+	Bootstrap           bool                 `yaml:"bootstrap"`
 	ClusterName         string               `yaml:"cluster_name"`
 	HCloudToken         string               `yaml:"hcloud_token"`
 	K3OSToken           string               `yaml:"k3os_token"`
 	K3OSMasterJoinURL   string               `yaml:"k3os_master_join_url"`
+	BackupConfig        *BackupConfig        `yaml:"backup_config"`
 	FluxConfig          *FluxConfig          `yaml:"flux_config"`
 	SealedSecretsConfig *SealedSecretsConfig `yaml:"sealed_secrets_config"`
+}
+
+// BackupConfig is the restic config
+type BackupConfig struct {
+	Password        string `yaml:"password"`
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	RepositoryURL   string `yaml:"repository_url"`
 }
 
 // FluxConfig is the flux CD config

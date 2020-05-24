@@ -132,7 +132,9 @@ func Run() (*model.HCloudK3OSConfig, error) {
 				PrivateNetwork: &model.Network{},
 				FloatingIPs:    []*model.IPAddress{},
 			},
-			ClusterConfig: &model.ClusterConfig{},
+			ClusterConfig: &model.ClusterConfig{
+				BackupConfig: &model.BackupConfig{},
+			},
 		}
 		pubipv4net  *net.IPNet
 		pubipv6net  *net.IPNet
@@ -257,6 +259,11 @@ func Run() (*model.HCloudK3OSConfig, error) {
 	}
 	cfg.ClusterConfig.HCloudToken = userConfig.HCloudToken
 	cfg.ClusterConfig.K3OSToken = userConfig.K3OSToken
+	cfg.ClusterConfig.Bootstrap = userConfig.Bootstrap
+	cfg.ClusterConfig.BackupConfig.Password = userConfig.BackupPassword
+	cfg.ClusterConfig.BackupConfig.AccessKeyID = userConfig.BackupAccessKeyID
+	cfg.ClusterConfig.BackupConfig.SecretAccessKey = userConfig.BackupSecretAccessKey
+	cfg.ClusterConfig.BackupConfig.RepositoryURL = userConfig.BackupRepositoryURL
 
 	if len(masterServer.PrivateNetworks) != 1 {
 		return nil, fmt.Errorf("master server doesn't have exactly one private network")

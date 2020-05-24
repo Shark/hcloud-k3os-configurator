@@ -17,13 +17,13 @@ const cachedConfigPath = "/var/lib/hcloud-k3os/config.yaml"
 // Load tries to fetch & generate the config from scratch and falls back to the cached config if that's not possible
 func Load(log *logrus.Logger, dry bool) (cfg *model.HCloudK3OSConfig, err error) {
 	defer func() {
-		if err2 := cmd.Run(log, dry, "dhcpcd", "--ipv4only", "--noarp", "--release", "eth0"); err2 != nil {
+		if _, err2 := cmd.Run(&cmd.Command{Name: "dhcpcd", Arg: []string{"--ipv4only", "--noarp", "--release", "eth0"}}, log, dry); err2 != nil {
 			log.WithError(err2).Error("error releasing eth0 from DHCP")
 			err = fmt.Errorf("error releasing eth0 from DHCP: %w", err2)
 		}
 	}()
 
-	if err = cmd.Run(log, dry, "dhcpcd", "--ipv4only", "--noarp", "eth0"); err != nil {
+	if _, err = cmd.Run(&cmd.Command{Name: "dhcpcd", Arg: []string{"--ipv4only", "--noarp", "eth0"}}, log, dry); err != nil {
 		return nil, fmt.Errorf("error configuring eth0 with DHCP: %w", err)
 	}
 
@@ -61,7 +61,7 @@ func storeConfig(cfg *model.HCloudK3OSConfig) (*model.HCloudK3OSConfig, error) {
 	)
 
 	if buf, err = yaml.Marshal(cfg); err != nil {
-		return nil, fmt.Errorf("error marshalling cofnig to YAML: %v", err)
+		return nil, fmt.Errorf("error marshalling config to YAML: %v", err)
 	}
 
 	if err = ioutil.WriteFile(cachedConfigPath, buf, 0600); err != nil {

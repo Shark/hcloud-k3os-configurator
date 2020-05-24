@@ -4,7 +4,7 @@ COPY test/api-mock/CertificateAuthorityCertificate.pem /usr/local/share/ca-certi
 RUN update-ca-certificates \
  && mkdir -p /etc/iptables /var/lib/rancher/k3s/server/manifests
 
-RUN apk add --no-cache curl \
+RUN apk add --no-cache curl restic \
  && curl -L -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/v1.18.0/bin/linux/amd64/kubectl \
  && chmod +x /usr/bin/kubectl \
  && apk del --no-cache curl

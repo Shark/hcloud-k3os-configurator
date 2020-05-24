@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/avast/retry-go"
+	"github.com/robfig/cron/v3"
 	"github.com/sirupsen/logrus"
 
+	"github.com/shark/hcloud-k3os-configurator/backup"
 	"github.com/shark/hcloud-k3os-configurator/cmd"
 	"github.com/shark/hcloud-k3os-configurator/kustomize"
 	"github.com/shark/hcloud-k3os-configurator/model"
@@ -38,11 +40,11 @@ func main() {
 		log.SetLevel(logrus.DebugLevel)
 	}
 
-	if err = os.MkdirAll("/var/lib/hcloud-k3os", 0755); err != nil {
-		log.WithError(err).Fatal("error creating /var/lib/hcloud-k3os")
+	if err = os.MkdirAll("/var/lib/hcloud-k3os/cache", 0755); err != nil {
+		log.WithError(err).Fatal("error creating /var/lib/hcloud-k3os/cache")
 	}
 
-	if err = cmd.Run(log, *dry, "rm", "-f", "/var/lib/hcloud-k3os/.running"); err != nil {
+	if _, err = cmd.Run(&cmd.Command{Name: "rm", Arg: []string{"-f", "/var/lib/hcloud-k3os/.running"}}, log, *dry); err != nil {
 		log.WithError(err).Error("Error deleting .running file")
 	}
 
@@ -61,6 +63,22 @@ func main() {
 
 	if cfg, err = store.Load(log, *dry); err != nil {
 		log.WithError(err).Fatal("Loading config failed")
+	}
+
+	if cfg.NodeConfig.Role == model.RoleMaster && !backup.IsBootstrapped() {
+		if err = backup.Init(cfg.ClusterConfig.BackupConfig, log, false); err != nil {
+			log.WithError(err).Fatal("Unable to initialize backup")
+		}
+
+		if !cfg.ClusterConfig.Bootstrap {
+			if err = backup.Restore(cfg.ClusterConfig.BackupConfig, log, false); err != nil {
+				log.WithError(err).Fatal("Unable to bootstrap node")
+			}
+		} else {
+			if err = backup.MarkBootstrapped(log, false); err != nil {
+				log.WithError(err).Fatal("Unable to mark node as bootstrapped")
+			}
+		}
 	}
 
 	log.Info("Generating and writing configuration files")
@@ -84,7 +102,7 @@ func main() {
 		if err = template.GenerateFluxConfig(path.Join(tmpdir, "flux", "patch.yaml"), cfg.ClusterConfig.FluxConfig); err != nil {
 			log.WithError(err).Error("Error generating Flux config")
 		} else {
-			if err = cmd.Run(log, false, "sh", "-c", fmt.Sprintf("kubectl kustomize %s > /var/lib/rancher/k3s/server/manifests/flux.yaml", path.Join(tmpdir, "flux"))); err != nil {
+			if _, err = cmd.Run(&cmd.Command{Name: "sh", Arg: []string{"-c", fmt.Sprintf("kubectl kustomize %s > /var/lib/rancher/k3s/server/manifests/flux.yaml", path.Join(tmpdir, "flux"))}}, log, false); err != nil {
 				log.WithError(err).Error("Error running kustomize for Flux")
 			}
 		}
@@ -95,7 +113,7 @@ func main() {
 	if err = template.GenerateHCloudCSIConfig(path.Join(tmpdir, "hcloud-csi", "secret.yaml"), cfg.ClusterConfig.HCloudToken); err != nil {
 		log.WithError(err).Error("Error generating HCloud CSI config")
 	} else {
-		if err = cmd.Run(log, false, "sh", "-c", fmt.Sprintf("kubectl kustomize %s > /var/lib/rancher/k3s/server/manifests/hcloud-csi.yaml", path.Join(tmpdir, "hcloud-csi"))); err != nil {
+		if _, err = cmd.Run(&cmd.Command{Name: "sh", Arg: []string{"-c", fmt.Sprintf("kubectl kustomize %s > /var/lib/rancher/k3s/server/manifests/hcloud-csi.yaml", path.Join(tmpdir, "hcloud-csi"))}}, log, false); err != nil {
 			log.WithError(err).Error("Error running kustomize for HCloud CSI")
 		}
 	}
@@ -103,7 +121,7 @@ func main() {
 	if err = template.GenerateHCloudFIPConfig(path.Join(tmpdir, "hcloud-fip", "config.yaml"), cfg.ClusterConfig.HCloudToken, cfg.NodeConfig.FloatingIPs); err != nil {
 		log.WithError(err).Error("Error generating HCloud FIP config")
 	} else {
-		if err = cmd.Run(log, false, "sh", "-c", fmt.Sprintf("kubectl kustomize %s > /var/lib/rancher/k3s/server/manifests/hcloud-fip.yaml", path.Join(tmpdir, "hcloud-fip"))); err != nil {
+		if _, err = cmd.Run(&cmd.Command{Name: "sh", Arg: []string{"-c", fmt.Sprintf("kubectl kustomize %s > /var/lib/rancher/k3s/server/manifests/hcloud-fip.yaml", path.Join(tmpdir, "hcloud-fip"))}}, log, false); err != nil {
 			log.WithError(err).Error("Error running kustomize for HCloud FIP")
 		}
 	}
@@ -112,7 +130,7 @@ func main() {
 		if err = template.GenerateSealedSecretsConfig(path.Join(tmpdir, "sealed-secrets", "secret.yaml"), cfg.ClusterConfig.SealedSecretsConfig); err != nil {
 			log.WithError(err).Error("Error generating SealedSecrets config")
 		} else {
-			if err = cmd.Run(log, false, "sh", "-c", fmt.Sprintf("kubectl kustomize %s > /var/lib/rancher/k3s/server/manifests/sealed-secrets.yaml", path.Join(tmpdir, "sealed-secrets"))); err != nil {
+			if _, err = cmd.Run(&cmd.Command{Name: "sh", Arg: []string{"-c", fmt.Sprintf("kubectl kustomize %s > /var/lib/rancher/k3s/server/manifests/sealed-secrets.yaml", path.Join(tmpdir, "sealed-secrets"))}}, log, false); err != nil {
 				log.WithError(err).Error("Error running kustomize for SealedSecrets")
 			}
 		}
@@ -121,7 +139,7 @@ func main() {
 	}
 
 	log.Info("Resetting network interfaces")
-	if err = cmd.Run(log, *dry, "sh", "-c", "for i in $(ls /sys/class/net/); do [ $i != lo ] && /usr/sbin/ip addr flush $i; done"); err != nil {
+	if _, err = cmd.Run(&cmd.Command{Name: "sh", Arg: []string{"-c", "for i in $(ls /sys/class/net/); do [ $i != lo ] && /usr/sbin/ip addr flush $i; done"}}, log, *dry); err != nil {
 		log.WithError(err).Error("Error resetting network interfaces")
 	}
 
@@ -154,7 +172,7 @@ func main() {
 	log.Info("Configuring IPv6 default route")
 	if err = retry.Do(func() error {
 		var runErr error
-		if runErr = cmd.Run(log, *dry, "ip", "-6", "route", "add", "default", "via", "fe80::1", "src", cfg.NodeConfig.PublicNetwork.IPv6Addresses[0].Net.IP.String(), "dev", "eth0"); err != nil {
+		if _, runErr = cmd.Run(&cmd.Command{Name: "ip", Arg: []string{"-6", "route", "add", "default", "via", "fe80::1", "src", cfg.NodeConfig.PublicNetwork.IPv6Addresses[0].Net.IP.String(), "dev", "eth0"}}, log, *dry); err != nil {
 			var cmdErr *cmd.Error
 			if errors.As(runErr, &cmdErr) {
 				// IPv6 not ready yet, retry
@@ -193,7 +211,18 @@ func main() {
 
 	log.Info("Configuration successful!")
 
-	if err = cmd.Run(log, false, "touch", "/var/lib/hcloud-k3os/.running"); err != nil {
+	c := cron.New()
+	if _, err = c.AddFunc("@every 8h", func() {
+		var err error
+		if err = backup.Backup(cfg.ClusterConfig.BackupConfig, log, *dry); err != nil {
+			log.WithError(err).Error("Error running periodic backup")
+		}
+	}); err != nil {
+		log.WithError(err).Error("Error creating job for periodic backup")
+	}
+	c.Start()
+
+	if _, err = cmd.Run(&cmd.Command{Name: "touch", Arg: []string{"/var/lib/hcloud-k3os/.running"}}, log, false); err != nil {
 		log.WithError(err).Error("Error creating .running file")
 	}
 
@@ -204,7 +233,7 @@ func main() {
 
 	log.Info("Shutdown signal received")
 
-	if err = cmd.Run(log, false, "rm", "-f", "/var/lib/hcloud-k3os/.running"); err != nil {
+	if _, err = cmd.Run(&cmd.Command{Name: "rm", Arg: []string{"-f", "/var/lib/hcloud-k3os/.running"}}, log, false); err != nil {
 		log.WithError(err).Error("Error deleting .running file")
 	}
 }

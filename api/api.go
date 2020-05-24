@@ -81,9 +81,16 @@ func (c *Client) GetUserData() (string, error) {
 
 // UserConfig represents the flux config in the user data
 type UserConfig struct {
+	Bootstrap bool `yaml:"bootstrap"`
+
 	HCloudToken       string   `yaml:"hcloud_token"`
 	K3OSToken         string   `yaml:"k3os_token"`
 	SSHAuthorizedKeys []string `yaml:"ssh_authorized_keys"`
+
+	BackupPassword        string `yaml:"backup_password"`
+	BackupAccessKeyID     string `yaml:"backup_access_key_id"`
+	BackupSecretAccessKey string `yaml:"backup_secret_access_key"`
+	BackupRepositoryURL   string `yaml:"backup_repository_url"`
 
 	FluxGitURL        *string `yaml:"flux_git_url"`
 	FluxGitPrivateKey *string `yaml:"flux_git_private_key"`
@@ -110,6 +117,18 @@ func (c *Client) GetUserConfigFromUserData() (*UserConfig, error) {
 	}
 	if len(userData.K3OSToken) == 0 {
 		return nil, fmt.Errorf("invalid: got zero-length K3OS token")
+	}
+	if len(userData.BackupPassword) == 0 {
+		return nil, fmt.Errorf("invalid: got empty BackupPassword")
+	}
+	if len(userData.BackupAccessKeyID) == 0 {
+		return nil, fmt.Errorf("invalid: got empty BackupAccessKeyID")
+	}
+	if len(userData.BackupSecretAccessKey) == 0 {
+		return nil, fmt.Errorf("invalid: got empty BackupSecretAccessKey")
+	}
+	if len(userData.BackupRepositoryURL) == 0 {
+		return nil, fmt.Errorf("invalid: got empty BackupRepositoryURL")
 	}
 	if (userData.FluxGitURL != nil && userData.FluxGitPrivateKey == nil) || (userData.FluxGitPrivateKey != nil && userData.FluxGitURL == nil) {
 		return nil, fmt.Errorf("invalid: flux_git_url and flux_git_private_key must be both set or both be null")
