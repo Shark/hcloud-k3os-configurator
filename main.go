@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"os/signal"
 	"path"
@@ -175,14 +176,17 @@ func main() {
 	for _, ip := range cfg.NodeConfig.PrivateNetwork.IPv4Addresses {
 		cmds = append(
 			cmds,
-			&cmd.Command{Name: "ip", Arg: []string{"-4", "addr", "add", ip.Net.String(), "dev", cfg.NodeConfig.PrivateNetwork.NetDeviceName}},
+			&cmd.Command{Name: "ip", Arg: []string{"-4", "addr", "add", fmt.Sprintf("%s/32", ip.Net.IP.String()), "dev", cfg.NodeConfig.PrivateNetwork.NetDeviceName}},
 		)
 	}
-	cmds = append(
-		cmds,
-		&cmd.Command{Name: "ip", Arg: []string{"-4", "route", "add", cfg.NodeConfig.PrivateNetwork.GatewayIPv4.String(), "dev", cfg.NodeConfig.PrivateNetwork.NetDeviceName}},
-		&cmd.Command{Name: "ip", Arg: []string{"-4", "route", "add", cfg.NodeConfig.PrivateNetwork.IPv4Addresses[0].Net.String(), "via", cfg.NodeConfig.PrivateNetwork.GatewayIPv4.String()}},
-	)
+	var cnet *net.IPNet
+	if cnet, err = cfg.NodeConfig.PrivateNetwork.IPv4Addresses[0].CanonicalNet(); err == nil {
+		cmds = append(
+			cmds,
+			&cmd.Command{Name: "ip", Arg: []string{"-4", "route", "add", cfg.NodeConfig.PrivateNetwork.GatewayIPv4.String(), "dev", cfg.NodeConfig.PrivateNetwork.NetDeviceName}},
+			&cmd.Command{Name: "ip", Arg: []string{"-4", "route", "add", cnet.String(), "via", cfg.NodeConfig.PrivateNetwork.GatewayIPv4.String()}},
+		)
+	}
 	if err = cmd.RunMultiple(log, *dry, cmds); err != nil {
 		log.WithError(err).Error("Error configuring private network")
 	}

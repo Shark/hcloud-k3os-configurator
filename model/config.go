@@ -40,8 +40,21 @@ type Network struct {
 
 // IPAddress is an IP address on a network interface
 type IPAddress struct {
+	// Net contains the actual IP, not (only) the IP net
 	Net       *net.IPNet
 	IsPrimary bool `yaml:"is_primary"`
+}
+
+// CanonicalNet returns the actual network (if Net is 10.1.0.2/24, CanonicalNet is 10.1.0.0/24)
+func (ip *IPAddress) CanonicalNet() (*net.IPNet, error) {
+	var (
+		n   *net.IPNet
+		err error
+	)
+	if _, n, err = net.ParseCIDR(ip.Net.String()); err != nil {
+		return nil, err
+	}
+	return n, nil
 }
 
 // ClusterConfig is the config for the whole cluster

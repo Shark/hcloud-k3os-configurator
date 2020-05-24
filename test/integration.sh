@@ -11,7 +11,7 @@ main() {
   docker-compose up -d app
   sleep 5
   local rc=0
-  docker-compose exec app test -f /var/lib/hcloud-k3os/.running || rc=$?
+  docker-compose exec -T app test -f /var/lib/hcloud-k3os/.running || rc=$?
   if [[ $rc -ne 0 ]]; then
     docker-compose logs app
     exit 1
@@ -23,7 +23,7 @@ main() {
   docker-compose up -d app
   sleep 5
   local rc=0
-  docker-compose exec app test -f /var/lib/hcloud-k3os/.running || rc=$?
+  docker-compose exec -T app test -f /var/lib/hcloud-k3os/.running || rc=$?
   if [[ $rc -ne 0 ]]; then
     docker-compose logs app
     exit 1

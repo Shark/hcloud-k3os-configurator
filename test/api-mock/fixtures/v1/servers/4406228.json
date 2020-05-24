@@ -183,7 +183,7 @@
     "labels": {
       "role": "agent",
       "cluster": "test",
-      "name": "agent"
+      "node_name": "agent"
     },
     "volumes": [
       4176150

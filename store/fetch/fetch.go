@@ -141,10 +141,10 @@ func Run() (*model.HCloudK3OSConfig, error) {
 	)
 
 	// NodeConfig
-	if val, ok = server.Labels["name"]; ok {
+	if val, ok = server.Labels["node_name"]; ok {
 		cfg.NodeConfig.Name = val
 	} else {
-		return nil, fmt.Errorf("server %v needs a label 'name'", server)
+		return nil, fmt.Errorf("server %v needs a label 'node_name'", server)
 	}
 
 	if val, ok = server.Labels["role"]; ok {
@@ -172,6 +172,10 @@ func Run() (*model.HCloudK3OSConfig, error) {
 
 	cfg.NodeConfig.PublicNetwork.IPv4Addresses = []*model.IPAddress{{
 		Net:       pubipv4net,
+		IsPrimary: true,
+	}}
+	cfg.NodeConfig.PublicNetwork.IPv6Addresses = []*model.IPAddress{{
+		Net:       pubipv6net,
 		IsPrimary: true,
 	}}
 	for _, fip := range floatingIPs {
@@ -211,13 +215,11 @@ func Run() (*model.HCloudK3OSConfig, error) {
 				cfg.NodeConfig.FloatingIPs,
 				addr,
 			)
+		} else {
+			return nil, fmt.Errorf("unexpected floating IP type '%d'", fip.Type)
 		}
 	}
 
-	cfg.NodeConfig.PublicNetwork.IPv6Addresses = []*model.IPAddress{{
-		Net:       pubipv6net,
-		IsPrimary: true,
-	}}
 	cfg.NodeConfig.PublicNetwork.GatewayIPv4 = net.IPv4(172, 31, 1, 1)
 	cfg.NodeConfig.PublicNetwork.GatewayIPv6 = ipv6gw
 	cfg.NodeConfig.PublicNetwork.NetDeviceName = "eth0"

@@ -180,7 +180,7 @@
     "labels": {
       "role": "master",
       "cluster": "test",
-      "name": "server"
+      "node_name": "server"
     },
     "volumes": []
   }
