@@ -39,8 +39,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api-mock
-    volumes:
-      - ./test/api-mock:/usr/src
     networks:
       - hcloud_default
 #  k3s_server:

@@ -3,8 +3,9 @@ set -euo pipefail; [[ "${TRACE-}" ]] && set -x
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 main() {
-  #docker-compose build
+  docker-compose build
   docker-compose up -d hcloud
+  sleep 5
   docker-compose run --rm api-mock 4406144
 
   docker-compose up -d app
