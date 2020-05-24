@@ -14,11 +14,14 @@ jobs:
         uses: actions/setup-go@v1.0.0
         with:
           version: "1.14"
+      - name: Set GOPATH
+        run: echo "::set-env name=GOPATH::$(go env GOPATH)"
       - name: Get the version
         id: get_version
         run: echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
       - name: Build Linux binary
         run: |
+          export PATH="${{ env.GOPATH }}/bin:$PATH"
           go get github.com/markbates/pkger/cmd/pkger
           pkger
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-d -s -w" -tags netgo -installsuffix netgo -o hcloud-k3os-configurator_${{ steps.get_version.outputs.version }}_amd64 .
