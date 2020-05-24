@@ -19,6 +19,8 @@ jobs:
         run: echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
       - name: Build Linux binary
         run: |
+          go get github.com/markbates/pkger/cmd/pkger
+          pkger
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-d -s -w" -tags netgo -installsuffix netgo -o hcloud-k3os-configurator_${{ steps.get_version.outputs.version }}_amd64 .
           xz hcloud-k3os-configurator_${{ steps.get_version.outputs.version }}_amd64
       - name: Create Release
