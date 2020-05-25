@@ -19,4 +19,4 @@ COPY . .
 RUN pkger \
  && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-d -s -w" -tags netgo -installsuffix netgo -o /go/bin/hcloud-k3os-configurator .
 
-CMD ["/go/bin/hcloud-k3os-configurator", "-dry", "-debug"]
+CMD ["/go/bin/hcloud-k3os-configurator", "daemon", "--dry", "--debug"]

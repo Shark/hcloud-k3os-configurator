@@ -36,6 +36,8 @@ func GenerateK3OSConfig(path string, cfg *model.HCloudK3OSConfig) (err error) {
 			"server",
 			"--advertise-address",
 			cfg.NodeConfig.PrivateNetwork.IPv4Addresses[0].Net.IP.String(),
+			"--disable",
+			"traefik",
 		)
 	} else if cfg.NodeConfig.Role == model.RoleAgent {
 		k3cfg.K3OS.K3SArgs = append(

@@ -1,6 +1,10 @@
 package model
 
-import "net"
+import (
+	"net"
+
+	"github.com/sirupsen/logrus"
+)
 
 // Role is the node role, i.e. master or agent
 type Role string
@@ -87,4 +91,11 @@ type FluxConfig struct {
 type SealedSecretsConfig struct {
 	TLSCert string `yaml:"tls_cert"`
 	TLSKey  string `yaml:"tls_key"`
+}
+
+// RuntimeConfig is the app config at runtime, i.e. flags, logger etc.
+type RuntimeConfig struct {
+	Dry    bool
+	Debug  bool
+	Logger *logrus.Logger
 }
