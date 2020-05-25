@@ -122,13 +122,19 @@ func main() {
 		log.Debug("SealedSecrets is disabled")
 	}
 
+	log.Info("Resetting network interfaces")
+	if _, err = cmd.Run(&cmd.Command{Name: "sh", Arg: []string{"-c", "for i in /sys/class/net/eth*; do ip link set down $(basename $i) && ip addr flush $(basename $i) && ip link set up $(basename $i); done"}}, log, *dry); err != nil {
+		log.WithError(err).Error("Error resetting network interfaces")
+	}
+
 	log.Info("Configuring public IPv4")
-	cmds := []*cmd.Command{{Name: "ip", Arg: []string{"-4", "link", "set", "up", "dev", cfg.NodeConfig.PublicNetwork.NetDeviceName}}}
+	cmds := []*cmd.Command{}
 	for _, ip := range cfg.NodeConfig.PublicNetwork.IPv4Addresses {
-		cmds = append(cmds, &cmd.Command{Name: "ip", Arg: []string{"-4", "addr", "add", ip.Net.String(), "dev", "eth0"}})
+		cmds = append(cmds, &cmd.Command{Name: "ip", Arg: []string{"-4", "addr", "add", ip.Net.String(), "dev", cfg.NodeConfig.PublicNetwork.NetDeviceName}})
 	}
 	cmds = append(
 		cmds,
+		&cmd.Command{Name: "ip", Arg: []string{"-4", "route", "add", cfg.NodeConfig.PublicNetwork.GatewayIPv4.String(), "dev", "eth0", "src", cfg.NodeConfig.PublicNetwork.IPv4Addresses[0].Net.IP.String()}},
 		&cmd.Command{Name: "ip", Arg: []string{"-4", "route", "add", "default", "via", cfg.NodeConfig.PublicNetwork.GatewayIPv4.String()}},
 	)
 	if err = cmd.RunMultiple(log, *dry, cmds); err != nil {
@@ -147,10 +153,15 @@ func main() {
 		log.WithError(err).Error("Error configuring public IPv6")
 	}
 
+	// Sleep is required for IPv6 default route to be added reliably
+	// TODO debug why we need a sleep for this
+	time.Sleep(3 * time.Second)
+
 	log.Info("Configuring IPv6 default route")
 	if err = retry.Do(func() error {
 		var runErr error
 		if _, runErr = cmd.Run(&cmd.Command{Name: "ip", Arg: []string{"-6", "route", "add", "default", "via", "fe80::1", "src", cfg.NodeConfig.PublicNetwork.IPv6Addresses[0].Net.IP.String(), "dev", "eth0"}}, log, *dry); err != nil {
+			log.WithError(err).Error("error set route")
 			var cmdErr *cmd.Error
 			if errors.As(runErr, &cmdErr) {
 				// IPv6 not ready yet, retry
@@ -166,9 +177,7 @@ func main() {
 	}
 
 	log.Info("Configuring private network")
-	cmds = []*cmd.Command{
-		{Name: "ip", Arg: []string{"-4", "link", "set", "up", "dev", cfg.NodeConfig.PrivateNetwork.NetDeviceName}},
-	}
+	cmds = []*cmd.Command{}
 	for _, ip := range cfg.NodeConfig.PrivateNetwork.IPv4Addresses {
 		cmds = append(
 			cmds,
