@@ -13,7 +13,6 @@ import (
 
 	"github.com/avast/retry-go"
 	"github.com/robfig/cron/v3"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/shark/hcloud-k3os-configurator/backup"
@@ -37,14 +36,6 @@ func Daemon(rcfg *model.RuntimeConfig) *cobra.Command {
 				cfg    *model.HCloudK3OSConfig
 			)
 
-			if rcfg.Debug {
-				log.SetLevel(logrus.DebugLevel)
-			}
-
-			if err = os.MkdirAll("/var/lib/hcloud-k3os/cache", 0755); err != nil {
-				log.WithError(err).Fatal("error creating /var/lib/hcloud-k3os/cache")
-			}
-
 			if _, err = cmd.Run(&cmd.Command{Name: "rm", Arg: []string{"-f", "/var/lib/hcloud-k3os/.running"}}, log, rcfg.Dry); err != nil {
 				log.WithError(err).Error("Error deleting .running file")
 			}
@@ -62,7 +53,7 @@ func Daemon(rcfg *model.RuntimeConfig) *cobra.Command {
 				}
 			}
 
-			if cfg, err = store.Load(log, rcfg.Dry); err != nil {
+			if cfg, err = store.ConfigureAndLoad(log, rcfg.Dry); err != nil {
 				log.WithError(err).Fatal("Loading config failed")
 			}
 

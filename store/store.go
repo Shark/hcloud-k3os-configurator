@@ -14,8 +14,8 @@ import (
 
 const cachedConfigPath = "/var/lib/hcloud-k3os/config.yaml"
 
-// Load tries to fetch & generate the config from scratch and falls back to the cached config if that's not possible
-func Load(log *logrus.Logger, dry bool) (cfg *model.HCloudK3OSConfig, err error) {
+// ConfigureAndLoad tries to fetch & generate the config from scratch and falls back to the cached config if that's not possible
+func ConfigureAndLoad(log *logrus.Logger, dry bool) (cfg *model.HCloudK3OSConfig, err error) {
 	defer func() {
 		if _, err2 := cmd.Run(&cmd.Command{Name: "dhcpcd", Arg: []string{"--ipv4only", "--noarp", "--release", "eth0"}}, log, dry); err2 != nil {
 			log.WithError(err2).Error("error releasing eth0 from DHCP")
@@ -27,15 +27,18 @@ func Load(log *logrus.Logger, dry bool) (cfg *model.HCloudK3OSConfig, err error)
 		return nil, fmt.Errorf("error configuring eth0 with DHCP: %w", err)
 	}
 
+	return LoadAndCache()
+}
+
+// LoadAndCache loads the hcloud-k3os config remotely with a fallback on the local cache
+func LoadAndCache() (cfg *model.HCloudK3OSConfig, err error) {
 	if cfg, err = fetch.Run(); err == nil {
 		return storeConfig(cfg)
 	}
-
-	log.WithError(err).Warn("Fetch failed")
-
 	return loadCachedConfig()
 }
 
+// loadCachedConfig retrieves the cached config from disk
 func loadCachedConfig() (*model.HCloudK3OSConfig, error) {
 	var (
 		buf []byte

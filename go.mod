@@ -7,6 +7,7 @@ require (
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
 	github.com/markbates/pkger v0.15.1
 	github.com/mitchellh/mapstructure v1.3.1 // indirect
+	github.com/olekukonko/tablewriter v0.0.4
 	github.com/pelletier/go-toml v1.8.0 // indirect
 	github.com/robfig/cron/v3 v3.0.0
 	github.com/sirupsen/logrus v1.4.2

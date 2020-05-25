@@ -12,8 +12,8 @@ main() {
   sleep 5
   local rc=0
   docker-compose exec -T app test -f /var/lib/hcloud-k3os/.running || rc=$?
+  docker-compose logs app
   if [[ $rc -ne 0 ]]; then
-    docker-compose logs app
     exit 1
   fi
 
@@ -24,8 +24,8 @@ main() {
   sleep 5
   local rc=0
   docker-compose exec -T app test -f /var/lib/hcloud-k3os/.running || rc=$?
+  docker-compose logs app
   if [[ $rc -ne 0 ]]; then
-    docker-compose logs app
     exit 1
   fi
 
