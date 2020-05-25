@@ -21,6 +21,18 @@ jobs:
         run: echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
       - name: Build Linux binary
         run: |
+          tmpdir="$(mktemp -d)"
+          cd "$tmpdir"
+          curl -sSL https://github.com/fluxcd/flux/archive/1.17.1.tar.gz | tar xz
+          mv flux-1.17.1/deploy "$GITHUB_WORKSPACE"/kustomize/static/flux/flux-deploy
+          curl -sSL https://github.com/fluxcd/helm-operator/archive/v1.0.0-rc8.tar.gz | tar xz
+          mv helm-operator-1.0.0-rc8/deploy "$GITHUB_WORKSPACE"/kustomize/static/flux/helm-operator-deploy
+          curl -sSL -o "$GITHUB_WORKSPACE"/kustomize/static/hcloud-csi/hcloud-csi.yaml https://raw.githubusercontent.com/hetznercloud/csi-driver/v1.2.2/deploy/kubernetes/hcloud-csi.yml
+          curl -sSL -o "$GITHUB_WORKSPACE"/kustomize/static/hcloud-fip/rbac.yaml https://raw.githubusercontent.com/cbeneke/hcloud-fip-controller/v0.3.1/deploy/rbac.yaml
+          curl -sSL -o "$GITHUB_WORKSPACE"/kustomize/static/hcloud-fip/daemonset.yaml https://raw.githubusercontent.com/cbeneke/hcloud-fip-controller/v0.3.1/deploy/daemonset.yaml
+          curl -sSL -o "$GITHUB_WORKSPACE"/kustomize/static/sealed-secrets/controller.yaml https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.9.7/controller.yaml
+
+          cd "$GITHUB_WORKSPACE"
           export PATH="${{ env.GOPATH }}/bin:$PATH"
           go get github.com/markbates/pkger/cmd/pkger
           pkger
