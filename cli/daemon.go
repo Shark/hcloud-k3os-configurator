@@ -190,7 +190,7 @@ func Daemon(rcfg *model.RuntimeConfig) *cobra.Command {
 
 			log.Info("Configuration successful!")
 
-			if cfg.NodeConfig.Role == model.RoleMaster && !backup.IsBootstrapped() {
+			if !backup.IsBootstrapped() {
 				if err = backup.Init(cfg.ClusterConfig.BackupConfig, log, false); err != nil {
 					log.WithError(err).Fatal("Unable to initialize backup")
 				}
